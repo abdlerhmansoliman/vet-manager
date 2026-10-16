@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vet-db": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-mysql",
+        "mysql://abdelrhaman:12345678@127.0.0.1:3306/vet-manage"
+      ]
+    }
+  }
+}
