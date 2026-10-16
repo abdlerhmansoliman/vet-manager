@@ -7,8 +7,8 @@ namespace App\Http\Controllers\Api\V1\Inventory;
 use App\Actions\Inventory\ConsumeStockAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Inventory\ConsumeStockRequest;
-use App\Http\Resources\InventoryMovementResource;
 use App\Models\User;
+use App\Transformers\InventoryMovementTransformer;
 use Illuminate\Http\JsonResponse;
 
 class InventoryConsumeController extends Controller
@@ -26,7 +26,7 @@ class InventoryConsumeController extends Controller
             'product_id' => $result['product']->id,
             'total_deducted' => $result['total_deducted'],
             'remaining_stock' => $result['remaining_stock'],
-            'movements' => InventoryMovementResource::collection($result['movements']),
+            'movements' => InventoryMovementTransformer::items($result['movements']),
         ]);
     }
 }

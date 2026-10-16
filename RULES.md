@@ -17,4 +17,4 @@
    - Never use `$casts = [...]`. Use Laravel 11's `protected function casts(): array`.
 
 5. Input Flow:
-   - FormRequest -> Validated Array -> Readonly DTO -> Action/Service -> Resource Response.
+   - FormRequest -> Validated Array -> Readonly DTO -> Action/Service -> Transformer Response.

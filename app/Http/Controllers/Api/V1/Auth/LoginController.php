@@ -7,7 +7,7 @@ namespace App\Http\Controllers\Api\V1\Auth;
 use App\Actions\Auth\LoginAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
-use App\Http\Resources\UserResource;
+use App\Transformers\UserTransformer;
 use Illuminate\Http\JsonResponse;
 
 class LoginController extends Controller
@@ -21,7 +21,7 @@ class LoginController extends Controller
 
         return response()->json([
             'token' => $result['token'],
-            'user' => new UserResource($result['user']),
+            'user' => UserTransformer::item($result['user']),
             'tenant' => [
                 'id' => $result['tenant']->id,
                 'name' => $result['tenant']->name,

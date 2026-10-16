@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\UserResource;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Tenancy\TenantManager;
+use App\Transformers\UserTransformer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -26,7 +26,7 @@ class MeController extends Controller
         $tenant = $tenantManager->current();
 
         return response()->json([
-            'user' => new UserResource($user),
+            'user' => UserTransformer::item($user),
             'tenant' => [
                 'id' => $tenant->id,
                 'name' => $tenant->name,

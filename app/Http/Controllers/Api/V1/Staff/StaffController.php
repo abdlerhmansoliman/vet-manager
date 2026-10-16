@@ -9,21 +9,22 @@ use App\Actions\Staff\UpdateAvailabilityAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Staff\CreateStaffRequest;
 use App\Http\Requests\Staff\UpdateAvailabilityRequest;
-use App\Http\Resources\StaffResource;
 use App\Models\User;
+use App\Transformers\StaffTransformer;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class StaffController extends Controller
 {
     /**
      * List clinic staff with profiles, availability, and active case counts.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(): JsonResponse
     {
         $staff = User::query()->with('profile')->get();
 
-        return StaffResource::collection($staff);
+        return response()->json([
+            'data' => StaffTransformer::items($staff),
+        ]);
     }
 
     /**
@@ -33,9 +34,9 @@ class StaffController extends Controller
     {
         $user = $action->execute($request->toDTO());
 
-        return (new StaffResource($user))
-            ->response()
-            ->setStatusCode(201);
+        return response()->json([
+            'data' => StaffTransformer::item($user),
+        ], 201);
     }
 
     /**
@@ -45,9 +46,11 @@ class StaffController extends Controller
         User $user,
         UpdateAvailabilityRequest $request,
         UpdateAvailabilityAction $action
-    ): StaffResource {
+    ): JsonResponse {
         $updatedUser = $action->execute($user, $request->toDTO());
 
-        return new StaffResource($updatedUser);
+        return response()->json([
+            'data' => StaffTransformer::item($updatedUser),
+        ]);
     }
 }
