@@ -19,6 +19,7 @@ class StaffTransformer extends Transformer
             'name' => $item->name,
             'email' => $item->email,
             'role' => $item->role->value,
+            'role_label' => $item->role->label(),
             'phone' => $item->phone,
             'is_active' => $item->is_active,
             'profile' => $item->relationLoaded('profile') && $item->profile

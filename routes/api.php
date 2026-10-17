@@ -52,10 +52,14 @@ Route::middleware('tenant')->group(function (): void {
             Route::post('/auth/logout', LogoutController::class);
             Route::post('/auth/verify-pin', VerifyPinController::class);
 
-            // Staff & Veterinarian Profile Management
+            // Staff & Veterinarian Profile Management (Full CRUD)
             Route::get('/staff', [StaffController::class, 'index']);
             Route::post('/staff', [StaffController::class, 'store']);
+            Route::get('/staff/{user}', [StaffController::class, 'show']);
+            Route::put('/staff/{user}', [StaffController::class, 'update']);
+            Route::patch('/staff/{user}/status', [StaffController::class, 'updateStatus']);
             Route::patch('/staff/{user}/availability', [StaffController::class, 'updateAvailability']);
+            Route::delete('/staff/{user}', [StaffController::class, 'destroy']);
 
             // High-Precision Fractional Inventory Engine
             Route::get('/inventory/products', [ProductController::class, 'index']);
