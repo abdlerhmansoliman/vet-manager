@@ -6,8 +6,10 @@ namespace Tests\Feature;
 
 use App\Enums\TenantPlan;
 use App\Enums\TenantStatus;
+use App\Models\LandlordUser;
 use App\Models\Tenant;
 use App\Services\Tenancy\TenantManager;
+use Database\Seeders\LandlordUserSeeder;
 use Database\Seeders\TenantSeeder;
 use Database\Seeders\TenantStaffSeeder;
 use Illuminate\Support\Str;
@@ -15,12 +17,19 @@ use Tests\TestCase;
 
 class LandlordDashboardTest extends TestCase
 {
+    private LandlordUser $admin;
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->seed(TenantSeeder::class);
         $this->seed(TenantStaffSeeder::class);
+        $this->seed(LandlordUserSeeder::class);
+
+        /** @var LandlordUser $admin */
+        $admin = LandlordUser::query()->where('email', 'admin@vetmanager.io')->firstOrFail();
+        $this->admin = $admin;
 
         // Ensure base tenants are reset to known clean states
         Tenant::query()->where('slug', 'alphavet')->update([
@@ -31,9 +40,78 @@ class LandlordDashboardTest extends TestCase
         ]);
     }
 
-    public function test_landlord_dashboard_renders_successfully_with_metrics_and_tenant_list(): void
+    public function test_unauthenticated_visitor_is_redirected_to_landlord_login(): void
     {
         $response = $this->get('/');
+
+        $response->assertRedirect(route('landlord.login'));
+    }
+
+    public function test_landlord_login_page_renders_successfully(): void
+    {
+        $response = $this->get('/login');
+
+        $response->assertStatus(200)
+            ->assertSee('Landlord Operations Console')
+            ->assertSee('Sign In to Operations Console');
+    }
+
+    public function test_landlord_superadmin_can_login_with_valid_credentials(): void
+    {
+        $response = $this->post('/login', [
+            'email' => 'admin@vetmanager.io',
+            'password' => 'Password123!',
+        ]);
+
+        $response->assertRedirect(route('landlord.dashboard'))
+            ->assertSessionHas('success');
+
+        $this->assertAuthenticatedAs($this->admin, 'landlord');
+    }
+
+    public function test_landlord_login_fails_with_invalid_credentials(): void
+    {
+        $response = $this->from('/login')->post('/login', [
+            'email' => 'admin@vetmanager.io',
+            'password' => 'WrongPasswordSecret!',
+        ]);
+
+        $response->assertRedirect('/login')
+            ->assertSessionHasErrors('email');
+
+        $this->assertGuest('landlord');
+    }
+
+    public function test_inactive_landlord_user_cannot_login(): void
+    {
+        $this->admin->update(['is_active' => false]);
+
+        $response = $this->from('/login')->post('/login', [
+            'email' => 'admin@vetmanager.io',
+            'password' => 'Password123!',
+        ]);
+
+        $response->assertRedirect('/login')
+            ->assertSessionHasErrors('email');
+
+        $this->assertGuest('landlord');
+
+        $this->admin->update(['is_active' => true]);
+    }
+
+    public function test_landlord_user_can_logout(): void
+    {
+        $response = $this->actingAs($this->admin, 'landlord')->post('/logout');
+
+        $response->assertRedirect(route('landlord.login'))
+            ->assertSessionHas('success');
+
+        $this->assertGuest('landlord');
+    }
+
+    public function test_landlord_dashboard_renders_successfully_with_metrics_and_tenant_list(): void
+    {
+        $response = $this->actingAs($this->admin, 'landlord')->get('/');
 
         $response->assertStatus(200)
             ->assertViewIs('landlord.dashboard')
@@ -46,19 +124,20 @@ class LandlordDashboardTest extends TestCase
             ])
             ->assertSee('Multi-Clinic Operations Console')
             ->assertSee('Alpha Pet Hospital')
+            ->assertSee('Platform Superadmin')
             ->assertSee('Equine &amp; Farm Ambulatory Care', false);
     }
 
     public function test_landlord_dashboard_filtering_by_status_and_search(): void
     {
         // 1. Search by keyword
-        $searchResponse = $this->get('/?search=Alpha');
+        $searchResponse = $this->actingAs($this->admin, 'landlord')->get('/?search=Alpha');
         $searchResponse->assertStatus(200)
             ->assertSee('Alpha Pet Hospital')
             ->assertDontSee('Equine &amp; Farm Ambulatory Care', false);
 
         // 2. Filter by Plan
-        $planResponse = $this->get('/?plan=clinic');
+        $planResponse = $this->actingAs($this->admin, 'landlord')->get('/?plan=clinic');
         $planResponse->assertStatus(200)
             ->assertSee('Equine &amp; Farm Ambulatory Care', false)
             ->assertDontSee('Alpha Pet Hospital');
@@ -69,7 +148,7 @@ class LandlordDashboardTest extends TestCase
         /** @var Tenant $tenant */
         $tenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
 
-        $response = $this->getJson("/tenants/{$tenant->id}");
+        $response = $this->actingAs($this->admin, 'landlord')->getJson("/tenants/{$tenant->id}");
 
         $response->assertStatus(200)
             ->assertJson([
@@ -110,7 +189,7 @@ class LandlordDashboardTest extends TestCase
         ]);
 
         // Toggle to Suspended
-        $response = $this->patch("/tenants/{$tenant->id}/status");
+        $response = $this->actingAs($this->admin, 'landlord')->patch("/tenants/{$tenant->id}/status");
         $response->assertRedirect(route('landlord.dashboard'))
             ->assertSessionHas('success');
 
@@ -119,7 +198,7 @@ class LandlordDashboardTest extends TestCase
         $this->assertEquals(TenantStatus::Suspended, $tenant->status);
 
         // Toggle back to Active
-        $response = $this->patch("/tenants/{$tenant->id}/status");
+        $response = $this->actingAs($this->admin, 'landlord')->patch("/tenants/{$tenant->id}/status");
         $response->assertRedirect(route('landlord.dashboard'));
 
         $tenant->refresh();
@@ -143,7 +222,7 @@ class LandlordDashboardTest extends TestCase
             'plan' => TenantPlan::Solo,
         ]);
 
-        $response = $this->put("/tenants/{$tenant->id}", [
+        $response = $this->actingAs($this->admin, 'landlord')->put("/tenants/{$tenant->id}", [
             'name' => 'Updated Clinic Name',
             'plan' => 'enterprise',
             'storage_limit_gb' => 350,
@@ -166,7 +245,7 @@ class LandlordDashboardTest extends TestCase
         $slug = 'provtest'.$uniqueSuffix;
         $email = "owner.{$slug}@provtestvet.com";
 
-        $response = $this->post('/tenants', [
+        $response = $this->actingAs($this->admin, 'landlord')->post('/tenants', [
             'name' => 'Provisioned Test Clinic',
             'slug' => $slug,
             'plan' => 'clinic',
@@ -217,7 +296,7 @@ class LandlordDashboardTest extends TestCase
 
         app(TenantManager::class)->createDatabase($tenant);
 
-        $response = $this->delete("/tenants/{$tenant->id}");
+        $response = $this->actingAs($this->admin, 'landlord')->delete("/tenants/{$tenant->id}");
         $response->assertRedirect(route('landlord.dashboard'))
             ->assertSessionHas('success');
 

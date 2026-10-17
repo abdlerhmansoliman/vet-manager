@@ -78,17 +78,42 @@
                     </div>
                 </div>
 
-                <!-- Primary Action -->
+                <!-- Primary Action & User Auth Profile -->
                 <div class="flex items-center space-x-3">
                     <button type="button" 
                             onclick="openProvisionModal()" 
                             id="btn-open-provision"
-                            class="inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 shadow-lg shadow-emerald-600/25 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all duration-200 cursor-pointer active:scale-95">
+                            class="inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 shadow-lg shadow-emerald-600/25 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all duration-200 cursor-pointer active:scale-95">
                         <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                         </svg>
                         <span>Provision Clinic</span>
                     </button>
+
+                    @if (auth('landlord')->check())
+                        <div class="flex items-center space-x-3 pl-3 border-l border-slate-800">
+                            <div class="hidden md:flex flex-col text-right">
+                                <span class="text-xs font-semibold text-white leading-tight">
+                                    {{ auth('landlord')->user()->name }}
+                                </span>
+                                <span class="text-[10px] text-emerald-400 uppercase tracking-wider font-semibold">
+                                    {{ auth('landlord')->user()->role->label() }}
+                                </span>
+                            </div>
+
+                            <form action="{{ route('landlord.logout') }}" method="POST" class="inline">
+                                @csrf
+                                <button type="submit" 
+                                        id="btn-landlord-logout"
+                                        title="Sign out of Operations Console"
+                                        class="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-slate-800 border border-slate-800 transition">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                    </svg>
+                                </button>
+                            </form>
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>
