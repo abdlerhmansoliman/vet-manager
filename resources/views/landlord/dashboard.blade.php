@@ -401,7 +401,7 @@
 
     function openEditModal(id, name, plan, storageGb) {
         const form = document.getElementById('form-edit-tenant');
-        form.action = '/tenants/' + id;
+        form.action = '/central/tenants/' + id;
         document.getElementById('edit-name').value = name;
         document.getElementById('edit-plan').value = plan;
         document.getElementById('edit-storage').value = storageGb;
@@ -422,7 +422,7 @@
         dataContainer.classList.add('hidden');
 
         try {
-            const res = await fetch('/tenants/' + id, {
+            const res = await fetch('/central/tenants/' + id, {
                 headers: { 'Accept': 'application/json' }
             });
             if (!res.ok) throw new Error('Failed to load clinic metadata');

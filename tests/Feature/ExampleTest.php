@@ -9,11 +9,11 @@ use Tests\TestCase;
 class ExampleTest extends TestCase
 {
     /**
-     * A basic test example asserting the public login page is accessible.
+     * A basic test example asserting the public website root returns a 200 OK.
      */
     public function test_the_application_returns_a_successful_response(): void
     {
-        $response = $this->get('/login');
+        $response = $this->get('/');
 
         $response->assertStatus(200);
     }

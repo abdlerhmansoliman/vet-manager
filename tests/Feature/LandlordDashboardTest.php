@@ -42,14 +42,14 @@ class LandlordDashboardTest extends TestCase
 
     public function test_unauthenticated_visitor_is_redirected_to_landlord_login(): void
     {
-        $response = $this->get('/');
+        $response = $this->get('/central');
 
         $response->assertRedirect(route('landlord.login'));
     }
 
     public function test_landlord_login_page_renders_successfully(): void
     {
-        $response = $this->get('/login');
+        $response = $this->get('/central/login');
 
         $response->assertStatus(200)
             ->assertSee('Landlord Operations Console')
@@ -58,7 +58,7 @@ class LandlordDashboardTest extends TestCase
 
     public function test_landlord_superadmin_can_login_with_valid_credentials(): void
     {
-        $response = $this->post('/login', [
+        $response = $this->post('/central/login', [
             'email' => 'admin@vetmanager.io',
             'password' => 'Password123!',
         ]);
@@ -71,12 +71,12 @@ class LandlordDashboardTest extends TestCase
 
     public function test_landlord_login_fails_with_invalid_credentials(): void
     {
-        $response = $this->from('/login')->post('/login', [
+        $response = $this->from('/central/login')->post('/central/login', [
             'email' => 'admin@vetmanager.io',
             'password' => 'WrongPasswordSecret!',
         ]);
 
-        $response->assertRedirect('/login')
+        $response->assertRedirect('/central/login')
             ->assertSessionHasErrors('email');
 
         $this->assertGuest('landlord');
@@ -86,12 +86,12 @@ class LandlordDashboardTest extends TestCase
     {
         $this->admin->update(['is_active' => false]);
 
-        $response = $this->from('/login')->post('/login', [
+        $response = $this->from('/central/login')->post('/central/login', [
             'email' => 'admin@vetmanager.io',
             'password' => 'Password123!',
         ]);
 
-        $response->assertRedirect('/login')
+        $response->assertRedirect('/central/login')
             ->assertSessionHasErrors('email');
 
         $this->assertGuest('landlord');
@@ -101,7 +101,7 @@ class LandlordDashboardTest extends TestCase
 
     public function test_landlord_user_can_logout(): void
     {
-        $response = $this->actingAs($this->admin, 'landlord')->post('/logout');
+        $response = $this->actingAs($this->admin, 'landlord')->post('/central/logout');
 
         $response->assertRedirect(route('landlord.login'))
             ->assertSessionHas('success');
@@ -111,7 +111,7 @@ class LandlordDashboardTest extends TestCase
 
     public function test_landlord_dashboard_renders_successfully_with_metrics_and_tenant_list(): void
     {
-        $response = $this->actingAs($this->admin, 'landlord')->get('/');
+        $response = $this->actingAs($this->admin, 'landlord')->get('/central');
 
         $response->assertStatus(200)
             ->assertViewIs('landlord.dashboard')
@@ -131,13 +131,13 @@ class LandlordDashboardTest extends TestCase
     public function test_landlord_dashboard_filtering_by_status_and_search(): void
     {
         // 1. Search by keyword
-        $searchResponse = $this->actingAs($this->admin, 'landlord')->get('/?search=Alpha');
+        $searchResponse = $this->actingAs($this->admin, 'landlord')->get('/central?search=Alpha');
         $searchResponse->assertStatus(200)
             ->assertSee('Alpha Pet Hospital')
             ->assertDontSee('Equine &amp; Farm Ambulatory Care', false);
 
         // 2. Filter by Plan
-        $planResponse = $this->actingAs($this->admin, 'landlord')->get('/?plan=clinic');
+        $planResponse = $this->actingAs($this->admin, 'landlord')->get('/central?plan=clinic');
         $planResponse->assertStatus(200)
             ->assertSee('Equine &amp; Farm Ambulatory Care', false)
             ->assertDontSee('Alpha Pet Hospital');
@@ -148,7 +148,7 @@ class LandlordDashboardTest extends TestCase
         /** @var Tenant $tenant */
         $tenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
 
-        $response = $this->actingAs($this->admin, 'landlord')->getJson("/tenants/{$tenant->id}");
+        $response = $this->actingAs($this->admin, 'landlord')->getJson("/central/tenants/{$tenant->id}");
 
         $response->assertStatus(200)
             ->assertJson([
@@ -189,7 +189,7 @@ class LandlordDashboardTest extends TestCase
         ]);
 
         // Toggle to Suspended
-        $response = $this->actingAs($this->admin, 'landlord')->patch("/tenants/{$tenant->id}/status");
+        $response = $this->actingAs($this->admin, 'landlord')->patch("/central/tenants/{$tenant->id}/status");
         $response->assertRedirect(route('landlord.dashboard'))
             ->assertSessionHas('success');
 
@@ -198,7 +198,7 @@ class LandlordDashboardTest extends TestCase
         $this->assertEquals(TenantStatus::Suspended, $tenant->status);
 
         // Toggle back to Active
-        $response = $this->actingAs($this->admin, 'landlord')->patch("/tenants/{$tenant->id}/status");
+        $response = $this->actingAs($this->admin, 'landlord')->patch("/central/tenants/{$tenant->id}/status");
         $response->assertRedirect(route('landlord.dashboard'));
 
         $tenant->refresh();
@@ -222,7 +222,7 @@ class LandlordDashboardTest extends TestCase
             'plan' => TenantPlan::Solo,
         ]);
 
-        $response = $this->actingAs($this->admin, 'landlord')->put("/tenants/{$tenant->id}", [
+        $response = $this->actingAs($this->admin, 'landlord')->put("/central/tenants/{$tenant->id}", [
             'name' => 'Updated Clinic Name',
             'plan' => 'enterprise',
             'storage_limit_gb' => 350,
@@ -245,7 +245,7 @@ class LandlordDashboardTest extends TestCase
         $slug = 'provtest'.$uniqueSuffix;
         $email = "owner.{$slug}@provtestvet.com";
 
-        $response = $this->actingAs($this->admin, 'landlord')->post('/tenants', [
+        $response = $this->actingAs($this->admin, 'landlord')->post('/central/tenants', [
             'name' => 'Provisioned Test Clinic',
             'slug' => $slug,
             'plan' => 'clinic',
@@ -296,7 +296,7 @@ class LandlordDashboardTest extends TestCase
 
         app(TenantManager::class)->createDatabase($tenant);
 
-        $response = $this->actingAs($this->admin, 'landlord')->delete("/tenants/{$tenant->id}");
+        $response = $this->actingAs($this->admin, 'landlord')->delete("/central/tenants/{$tenant->id}");
         $response->assertRedirect(route('landlord.dashboard'))
             ->assertSessionHas('success');
 
