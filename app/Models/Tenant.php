@@ -10,6 +10,7 @@ use App\Services\Tenancy\TenantManager;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tenant extends Model
 {
@@ -66,6 +67,14 @@ class Tenant extends Model
         ];
     }
 
+    /**
+     * Staff directory lookup entries linked to this clinic.
+     */
+    public function staffLookups(): HasMany
+    {
+        return $this->hasMany(TenantStaffLookup::class, 'tenant_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === TenantStatus::Active;
@@ -94,5 +103,38 @@ class Tenant extends Model
         }
 
         return round(($this->storage_used_bytes / $this->storage_limit_bytes) * 100, 2);
+    }
+
+    /**
+     * Human-readable storage usage format (e.g. 1.25 GB).
+     */
+    public function formattedStorageUsed(): string
+    {
+        return $this->formatBytes($this->storage_used_bytes);
+    }
+
+    /**
+     * Human-readable storage limit format (e.g. 20 GB).
+     */
+    public function formattedStorageLimit(): string
+    {
+        return $this->formatBytes($this->storage_limit_bytes);
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes >= 1073741824) {
+            return round($bytes / 1073741824, 2).' GB';
+        }
+
+        if ($bytes >= 1048576) {
+            return round($bytes / 1048576, 2).' MB';
+        }
+
+        if ($bytes >= 1024) {
+            return round($bytes / 1024, 2).' KB';
+        }
+
+        return $bytes.' B';
     }
 }
