@@ -8,7 +8,10 @@ use App\Enums\StaffRole;
 use App\Services\Tenancy\TenantStaffSyncService;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Hash;
@@ -32,6 +35,7 @@ class User extends Authenticatable
         'password',
         'role',
         'phone',
+        'age',
         'pin',
         'is_active',
     ];
@@ -73,6 +77,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'pin' => 'hashed',
             'role' => StaffRole::class,
+            'age' => 'integer',
             'is_active' => 'boolean',
         ];
     }
@@ -83,6 +88,38 @@ class User extends Authenticatable
     public function profile(): HasOne
     {
         return $this->hasOne(VeterinarianProfile::class, 'user_id');
+    }
+
+    /**
+     * Clinical cases where this user is the primary attending veterinarian.
+     */
+    public function cases(): HasMany
+    {
+        return $this->hasMany(ClinicalCase::class, 'primary_veterinarian_id');
+    }
+
+    /**
+     * Diagnoses recorded by this veterinarian / staff member.
+     */
+    public function diagnoses(): HasMany
+    {
+        return $this->hasMany(Diagnosis::class, 'user_id');
+    }
+
+    /**
+     * Polymorphic image attachment collection (profile photo, badges, credentials).
+     */
+    public function images(): MorphMany
+    {
+        return $this->morphMany(Image::class, 'imageable');
+    }
+
+    /**
+     * Single primary avatar / profile photo.
+     */
+    public function image(): MorphOne
+    {
+        return $this->morphOne(Image::class, 'imageable')->latestOfMany();
     }
 
     /**

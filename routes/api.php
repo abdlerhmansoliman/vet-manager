@@ -7,11 +7,15 @@ use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
 use App\Http\Controllers\Api\V1\Auth\ResolveTenantsController;
 use App\Http\Controllers\Api\V1\Auth\VerifyPinController;
+use App\Http\Controllers\Api\V1\Cases\ClinicalCaseController;
+use App\Http\Controllers\Api\V1\Cases\DiagnosisController;
+use App\Http\Controllers\Api\V1\Client\ClientController;
 use App\Http\Controllers\Api\V1\Inventory\InventoryConsumeController;
 use App\Http\Controllers\Api\V1\Inventory\InventoryReceiveController;
 use App\Http\Controllers\Api\V1\Inventory\InventoryStockController;
 use App\Http\Controllers\Api\V1\Inventory\InventoryWasteController;
 use App\Http\Controllers\Api\V1\Inventory\ProductController;
+use App\Http\Controllers\Api\V1\Patient\PatientController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Models\Tenant;
 use Illuminate\Http\JsonResponse;
@@ -60,6 +64,29 @@ Route::middleware('tenant')->group(function (): void {
             Route::patch('/staff/{user}/status', [StaffController::class, 'updateStatus']);
             Route::patch('/staff/{user}/availability', [StaffController::class, 'updateAvailability']);
             Route::delete('/staff/{user}', [StaffController::class, 'destroy']);
+
+            // Client Registry (Full CRUD)
+            Route::get('/clients', [ClientController::class, 'index']);
+            Route::post('/clients', [ClientController::class, 'store']);
+            Route::get('/clients/{client}', [ClientController::class, 'show']);
+            Route::put('/clients/{client}', [ClientController::class, 'update']);
+            Route::delete('/clients/{client}', [ClientController::class, 'destroy']);
+
+            // Patient Registry (nested under clients for listing, flat for show/update)
+            Route::get('/clients/{client}/patients', [PatientController::class, 'index']);
+            Route::post('/patients', [PatientController::class, 'store']);
+            Route::get('/patients/{patient}', [PatientController::class, 'show']);
+            Route::put('/patients/{patient}', [PatientController::class, 'update']);
+
+            // Clinical Cases
+            Route::get('/patients/{patient}/cases', [ClinicalCaseController::class, 'index']);
+            Route::post('/cases', [ClinicalCaseController::class, 'store']);
+            Route::get('/cases/{case}', [ClinicalCaseController::class, 'show']);
+            Route::put('/cases/{case}', [ClinicalCaseController::class, 'update']);
+
+            // Diagnoses (nested under cases)
+            Route::get('/cases/{case}/diagnoses', [DiagnosisController::class, 'index']);
+            Route::post('/cases/{case}/diagnoses', [DiagnosisController::class, 'store']);
 
             // High-Precision Fractional Inventory Engine
             Route::get('/inventory/products', [ProductController::class, 'index']);

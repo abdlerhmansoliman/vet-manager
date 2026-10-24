@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Auth;
 
-use App\DTOs\Auth\ResolveTenantsDTO;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -23,10 +22,5 @@ class ResolveTenantsRequest extends FormRequest
         return [
             'email' => ['required', 'string', 'email'],
         ];
-    }
-
-    public function toDTO(): ResolveTenantsDTO
-    {
-        return ResolveTenantsDTO::fromArray($this->validated());
     }
 }

@@ -84,7 +84,7 @@ class StaffController extends Controller
     ): JsonResponse {
         /** @var User $actor */
         $actor = $request->user();
-        $updatedUser = $action->execute($user, $request->toDTO(), $actor);
+        $updatedUser = $action->execute($user, (bool) $request->validated('is_active'), $actor);
 
         return response()->json([
             'data' => StaffTransformer::item($updatedUser),
@@ -99,7 +99,7 @@ class StaffController extends Controller
         UpdateAvailabilityRequest $request,
         UpdateAvailabilityAction $action
     ): JsonResponse {
-        $updatedUser = $action->execute($user, $request->toDTO());
+        $updatedUser = $action->execute($user, (bool) $request->validated('is_available'));
 
         return response()->json([
             'data' => StaffTransformer::item($updatedUser),

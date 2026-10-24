@@ -15,32 +15,46 @@ return new class extends Migration
     {
         Schema::connection('tenant')->create('clients', function (Blueprint $table): void {
             $table->uuid('id')->primary();
-            $table->string('type')->default('individual_pet_owner'); // individual_pet_owner, farm_enterprise
-            $table->string('first_name');
-            $table->string('last_name');
-            $table->string('business_name')->nullable();
-            $table->string('email')->nullable();
-            $table->string('phone');
-            $table->string('emergency_contact')->nullable();
-            $table->text('address')->nullable();
+            $table->string('client_type', 32)->default('individual');
+            $table->string('name', 191);
+            $table->string('contact_person', 191)->nullable();
+            $table->string('phone_primary', 32);
+            $table->string('phone_secondary', 32)->nullable();
+            $table->text('physical_address')->nullable();
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
+
+            $table->index('name', 'idx_clients_name');
+            $table->index('phone_primary', 'idx_clients_phone_primary');
+            $table->index('client_type', 'idx_clients_type');
         });
 
         Schema::connection('tenant')->create('patients', function (Blueprint $table): void {
             $table->uuid('id')->primary();
-            $table->foreignUuid('client_id')->constrained('clients')->cascadeOnDelete();
-            $table->string('name');
-            $table->string('species'); // canine, feline, equine, bovine, etc.
-            $table->string('breed')->nullable();
-            $table->string('gender')->default('unknown'); // male_intact, male_neutered, female_intact, female_spayed
+            $table->foreignUuid('client_id')->constrained('clients')->restrictOnDelete();
+            $table->string('name_or_tag', 100);
+            $table->string('species', 64);
+            $table->string('breed', 100)->nullable();
+            $table->string('gender', 32)->default('unknown');
+            $table->unsignedSmallInteger('age')->nullable();
             $table->date('date_of_birth')->nullable();
+            $table->boolean('is_approximate_age')->default(false);
+            $table->string('microchip_number', 32)->nullable()->unique('uk_patients_microchip');
+            $table->string('ear_tag_id', 64)->nullable()->index('idx_patients_ear_tag');
+            $table->string('coat_color_markings', 191)->nullable();
             $table->decimal('current_weight_kg', 8, 3)->nullable();
-            $table->string('microchip_number')->nullable()->index();
+            $table->timestamp('weight_recorded_at')->nullable();
+            $table->text('history')->nullable();
+            $table->text('notes')->nullable();
+            $table->string('status', 32)->default('active');
+            $table->timestamp('deceased_at')->nullable();
             $table->json('allergies')->nullable();
-            $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();
+
+            $table->index(['client_id', 'status'], 'idx_patients_client_status');
+            $table->index(['species', 'breed'], 'idx_patients_species_breed');
         });
     }
 

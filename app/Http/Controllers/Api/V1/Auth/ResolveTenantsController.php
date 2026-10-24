@@ -17,7 +17,7 @@ class ResolveTenantsController extends Controller
      */
     public function __invoke(ResolveTenantsRequest $request, ResolveTenantsAction $action): JsonResponse
     {
-        $tenants = $action->execute($request->toDTO());
+        $tenants = $action->execute(strtolower(trim((string) $request->validated('email'))));
 
         return response()->json([
             'data' => TenantDiscoveryTransformer::items($tenants),

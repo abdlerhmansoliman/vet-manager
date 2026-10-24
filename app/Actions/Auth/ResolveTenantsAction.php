@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Auth;
 
-use App\DTOs\Auth\ResolveTenantsDTO;
 use App\Enums\TenantStatus;
 use App\Models\Tenant;
 use App\Models\TenantStaffLookup;
@@ -15,10 +14,10 @@ class ResolveTenantsAction
     /**
      * @return Collection<int, Tenant>
      */
-    public function execute(ResolveTenantsDTO $dto): Collection
+    public function execute(string $email): Collection
     {
         $tenantIds = TenantStaffLookup::query()
-            ->where('email', $dto->email)
+            ->where('email', $email)
             ->pluck('tenant_id');
 
         if ($tenantIds->isEmpty()) {

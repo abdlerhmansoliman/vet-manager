@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Inventory;
 
-use App\DTOs\Inventory\WasteStockDTO;
+use App\DTOs\Inventory\ConsumeStockDTO;
 use App\Enums\StockMovementType;
 use App\Models\InventoryMovementLedger;
 use App\Models\InventoryProduct;
@@ -23,7 +23,7 @@ class WasteStockAction
      *
      * @throws ValidationException
      */
-    public function execute(WasteStockDTO $dto, User $actor, ?string $idempotencyKey = null): array
+    public function execute(ConsumeStockDTO $dto, User $actor, ?string $idempotencyKey = null): array
     {
         $product = InventoryProduct::query()->findOrFail($dto->productId);
         $witness = null;

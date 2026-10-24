@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Staff;
 
-use App\DTOs\Staff\UpdateAvailabilityDTO;
 use App\Models\User;
 use App\Models\VeterinarianProfile;
 
@@ -13,11 +12,11 @@ class UpdateAvailabilityAction
     /**
      * Update the availability status for a clinic staff member.
      */
-    public function execute(User $user, UpdateAvailabilityDTO $dto): User
+    public function execute(User $user, bool $isAvailable): User
     {
         VeterinarianProfile::query()->updateOrCreate(
             ['user_id' => $user->id],
-            ['is_available' => $dto->isAvailable]
+            ['is_available' => $isAvailable]
         );
 
         return $user->load('profile');

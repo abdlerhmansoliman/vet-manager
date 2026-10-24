@@ -20,6 +20,7 @@ return new class extends Migration
             $table->string('password');
             $table->string('role')->default('vet_tech');
             $table->string('phone')->nullable();
+            $table->unsignedSmallInteger('age')->nullable();
             $table->string('pin', 60)->nullable(); // Hashed 4-digit PIN for controlled substance witnessing
             $table->boolean('is_active')->default(true);
             $table->rememberToken();

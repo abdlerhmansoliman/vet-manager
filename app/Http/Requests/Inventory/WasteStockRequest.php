@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Inventory;
 
-use App\DTOs\Inventory\WasteStockDTO;
+use App\DTOs\Inventory\ConsumeStockDTO;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -29,8 +29,8 @@ class WasteStockRequest extends FormRequest
         ];
     }
 
-    public function toDTO(): WasteStockDTO
+    public function toDTO(): ConsumeStockDTO
     {
-        return WasteStockDTO::fromArray($this->validated());
+        return ConsumeStockDTO::fromArray($this->validated());
     }
 }

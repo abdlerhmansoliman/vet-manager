@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Staff;
 
-use App\DTOs\Staff\UpdateStaffStatusDTO;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -23,10 +22,5 @@ class UpdateStaffStatusRequest extends FormRequest
         return [
             'is_active' => ['required', 'boolean'],
         ];
-    }
-
-    public function toDTO(): UpdateStaffStatusDTO
-    {
-        return UpdateStaffStatusDTO::fromArray($this->validated());
     }
 }
