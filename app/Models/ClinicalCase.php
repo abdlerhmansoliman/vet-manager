@@ -12,8 +12,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphMany;
-use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ClinicalCase extends Model
@@ -71,17 +69,10 @@ class ClinicalCase extends Model
         return $this->hasMany(Diagnosis::class, 'case_id');
     }
 
-    /**
-     * Diagnostic and clinical case images (radiographs, wounds, ultrasounds).
-     */
-    public function images(): MorphMany
+    public function progressNotes(): HasMany
     {
-        return $this->morphMany(Image::class, 'imageable');
-    }
-
-    public function image(): MorphOne
-    {
-        return $this->morphOne(Image::class, 'imageable')->latestOfMany();
+        return $this->hasMany(ClinicalProgressNote::class, 'clinical_case_id')
+            ->orderByDesc('created_at');
     }
 
     public function isOpen(): bool

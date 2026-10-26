@@ -31,6 +31,7 @@ class ClinicalCaseTransformer extends Transformer
             'provisional_diagnosis' => $item->provisional_diagnosis,
             'final_diagnosis' => $item->final_diagnosis,
             'diagnoses' => $item->relationLoaded('diagnoses') ? DiagnosisTransformer::items($item->diagnoses) : [],
+            'progress_notes' => $item->relationLoaded('progressNotes') ? ClinicalProgressNoteTransformer::items($item->progressNotes) : [],
             'admitted_at' => $item->admitted_at?->toIso8601String(),
             'discharged_at' => $item->discharged_at?->toIso8601String(),
             'created_at' => $item->created_at?->toIso8601String(),

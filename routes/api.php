@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Auth\MeController;
 use App\Http\Controllers\Api\V1\Auth\ResolveTenantsController;
 use App\Http\Controllers\Api\V1\Auth\VerifyPinController;
 use App\Http\Controllers\Api\V1\Cases\ClinicalCaseController;
+use App\Http\Controllers\Api\V1\Cases\ClinicalProgressNoteController;
 use App\Http\Controllers\Api\V1\Cases\DiagnosisController;
 use App\Http\Controllers\Api\V1\Client\ClientController;
 use App\Http\Controllers\Api\V1\Inventory\InventoryConsumeController;
@@ -87,6 +88,12 @@ Route::middleware('tenant')->group(function (): void {
             // Diagnoses (nested under cases)
             Route::get('/cases/{case}/diagnoses', [DiagnosisController::class, 'index']);
             Route::post('/cases/{case}/diagnoses', [DiagnosisController::class, 'store']);
+
+            // Clinical Progress Notes (nested under cases)
+            Route::get('/cases/{case}/progress-notes', [ClinicalProgressNoteController::class, 'index']);
+            Route::post('/cases/{case}/progress-notes', [ClinicalProgressNoteController::class, 'store']);
+            Route::get('/cases/{case}/progress-notes/{progressNote}', [ClinicalProgressNoteController::class, 'show']);
+            Route::post('/cases/{case}/progress-notes/{progressNote}/sign', [ClinicalProgressNoteController::class, 'sign']);
 
             // High-Precision Fractional Inventory Engine
             Route::get('/inventory/products', [ProductController::class, 'index']);
