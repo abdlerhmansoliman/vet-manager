@@ -13,9 +13,37 @@ use App\Models\Client;
 use App\Models\Patient;
 use App\Transformers\PatientTransformer;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class PatientController extends Controller
 {
+    /**
+     * List all patients across the clinic tenant with their owner clients.
+     */
+    public function all(Request $request): JsonResponse
+    {
+        $query = Patient::query()->with('client')->withCount('activeCases');
+
+        if ($request->filled('species')) {
+            $query->where('species', $request->query('species'));
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->query('search');
+            $query->where(function ($q) use ($search): void {
+                $q->where('name_or_tag', 'like', "%{$search}%")
+                    ->orWhere('breed', 'like', "%{$search}%")
+                    ->orWhere('microchip_number', 'like', "%{$search}%");
+            });
+        }
+
+        $patients = $query->orderBy('name_or_tag')->get();
+
+        return response()->json([
+            'data' => PatientTransformer::items($patients),
+        ]);
+    }
+
     /**
      * List all patients belonging to a specific client.
      */

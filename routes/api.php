@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\V1\Inventory\InventoryWasteController;
 use App\Http\Controllers\Api\V1\Inventory\ProductController;
 use App\Http\Controllers\Api\V1\Patient\PatientController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
+use App\Http\Controllers\Api\V1\Sync\SyncController;
 use App\Models\Tenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -73,7 +74,12 @@ Route::middleware('tenant')->group(function (): void {
             Route::put('/clients/{client}', [ClientController::class, 'update']);
             Route::delete('/clients/{client}', [ClientController::class, 'destroy']);
 
-            // Patient Registry (nested under clients for listing, flat for show/update)
+            // Sync Engine for Mobile Offline Persistence
+            Route::get('/sync/pull', [SyncController::class, 'pull']);
+            Route::post('/sync/push', [SyncController::class, 'push']);
+
+            // Patient Registry (all patients, nested under clients for listing, flat for show/update)
+            Route::get('/patients', [PatientController::class, 'all']);
             Route::get('/clients/{client}/patients', [PatientController::class, 'index']);
             Route::post('/patients', [PatientController::class, 'store']);
             Route::get('/patients/{patient}', [PatientController::class, 'show']);
