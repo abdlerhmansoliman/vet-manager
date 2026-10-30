@@ -19,9 +19,9 @@ class SyncController extends Controller
     {
         $since = $request->query('since');
 
-        $clientsQuery = DB::table('clients')->whereNull('deleted_at');
-        $patientsQuery = DB::table('patients')->whereNull('deleted_at');
-        $casesQuery = DB::table('cases')->whereNull('deleted_at');
+        $clientsQuery = DB::table('clients');
+        $patientsQuery = DB::table('patients');
+        $casesQuery = DB::table('cases');
 
         if ($since) {
             $clientsQuery->where('updated_at', '>=', $since);
@@ -51,7 +51,7 @@ class SyncController extends Controller
 
         $products = [];
         if (Schema::hasTable('inventory_products')) {
-            $productsQuery = DB::table('inventory_products')->whereNull('deleted_at');
+            $productsQuery = DB::table('inventory_products');
             if ($since) {
                 $productsQuery->where('updated_at', '>=', $since);
             }
