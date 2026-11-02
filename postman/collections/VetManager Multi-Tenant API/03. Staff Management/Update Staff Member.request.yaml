@@ -1,0 +1,25 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/staff/{{staff_id}}"
+method: PUT
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "name": "Dr. Sarah Connor",
+        "email": "sarah.connor@vetservices.com",
+        "role": "field_doctor",
+        "phone": "+1-555-9999",
+        "job_title": "Senior Ambulatory Vet",
+        "specialty": "Equine & Herd Health",
+        "license_number": "VET-US-9902",
+        "is_available": true
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 4000

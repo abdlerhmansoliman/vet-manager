@@ -1,0 +1,12 @@
+$kind: http-request
+name: Delete / Archive Staff Member
+url: "{{base_url}}/api/v1/staff/{{staff_id}}"
+method: DELETE
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 7000

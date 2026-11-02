@@ -1,0 +1,29 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/staff"
+method: POST
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "name": "Dr. Emily Watson",
+        "email": "emily.watson.1793042396@alphavet.com",
+        "password": "password123",
+        "role": "doctor",
+        "phone": "+1-555-8822",
+        "pin": "4321",
+        "job_title": "Equine & Small Animal Surgeon",
+        "specialty": "Soft Tissue Surgery",
+        "license_number": "VET-LIC-2026",
+        "date_of_birth": "1988-04-15",
+        "bio": "Certified veterinary surgeon with 10 years experience.",
+        "is_available": true
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 2000

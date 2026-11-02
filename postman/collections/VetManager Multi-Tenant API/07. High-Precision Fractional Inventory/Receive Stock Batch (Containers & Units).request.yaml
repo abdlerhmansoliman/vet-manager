@@ -1,0 +1,23 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/inventory/receive"
+method: POST
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "product_id": "{{product_id}}",
+        "batch_number": "BATCH-20261026-01",
+        "expiration_date": "2028-04-26",
+        "cost_per_base_unit": 0.45,
+        "containers_count": 10,
+        "base_quantity_per_container": 50
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 4000

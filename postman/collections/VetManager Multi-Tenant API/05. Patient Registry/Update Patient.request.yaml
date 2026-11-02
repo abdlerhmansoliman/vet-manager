@@ -1,0 +1,27 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/patients/{{patient_id}}"
+method: PUT
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "name_or_tag": "Maci Updated",
+        "species": "Feline",
+        "breed": "Domestic Shorthair",
+        "gender": "spayed_female",
+        "status": "active",
+        "current_weight_kg": 4.3,
+        "history": "Indoor cat, vaccinated.",
+        "allergies": [
+            "Cefazolin"
+        ]
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 4000

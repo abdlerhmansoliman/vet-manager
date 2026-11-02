@@ -1,0 +1,16 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/sync/pull?since="
+method: GET
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+queryParams:
+  - key: since
+    value: 2026-10-01T00:00:00Z
+    disabled: true
+    description: ISO8601 timestamp to fetch deltas updated since
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 1000

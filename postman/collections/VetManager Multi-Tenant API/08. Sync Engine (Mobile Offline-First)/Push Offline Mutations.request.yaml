@@ -1,0 +1,28 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/sync/push"
+method: POST
+headers:
+  Accept: application/json
+  Content-Type: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+body:
+  type: json
+  content: |-
+    {
+      "mutations": [
+        {
+          "mutation_id": "mut-001",
+          "entity_type": "patients",
+          "entity_id": "{{patient_id}}",
+          "action": "update",
+          "payload": {
+            "notes": "Offline consultation update"
+          }
+        }
+      ]
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 2000

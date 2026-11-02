@@ -1,0 +1,490 @@
+### VetManager Multi-Tenant API Testing Suite
+# Environment Variables
+@baseUrl = http://127.0.0.1:8000
+@tenantId = alphavet
+@token = 76|K1ev9ccwvMSgjJtMk6DNWRmEgRPelHbc9HP6MfAxf1ab48f3
+@clientId = 01a17972-2241-73f1-98fb-f2e813e12f5d
+@patientId = 01a17972-2246-7188-ad58-ea423b2ceeaa
+@caseId = 01a17972-224c-7276-a9a8-6601b257dae9
+@productId = 01a17972-8588-7264-9b5e-bf36b0a12808
+@staffId = 01a17972-21a7-70c4-9e3c-492a8aa4781a
+@noteId = 01a17972-2277-726b-bf30-7c9a9f337a5c
+
+# ==============================================================================
+# 01. TENANT DISCOVERY & DIAGNOSTICS (Public & Semi-Public)
+# ==============================================================================
+
+### 1. Resolve Tenants by Email (Central discovery route)
+POST {{baseUrl}}/api/v1/auth/resolve-tenants
+Accept: application/json
+Content-Type: application/json
+
+{
+  "email": "john.miller@alphavet.com"
+}
+
+### 2. Tenant Diagnostic & Connection Info
+GET {{baseUrl}}/api/tenant/info
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+
+# ==============================================================================
+# 02. AUTHENTICATION & SECURITY
+# ==============================================================================
+
+### 3. Login (Generates Sanctum Token)
+# @name loginRequest
+POST {{baseUrl}}/api/v1/auth/login
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Content-Type: application/json
+
+{
+  "email": "john.miller@alphavet.com",
+  "password": "password123",
+  "device_name": "HTTP Client Runner"
+}
+
+### 4. Current User Profile (Me)
+GET {{baseUrl}}/api/v1/auth/me
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 5. Verify PIN (Witness Dual-Authorization for Controlled Substances)
+POST {{baseUrl}}/api/v1/auth/verify-pin
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "witness_email": "john.miller@alphavet.com",
+  "pin": "1234"
+}
+
+### 6. Logout
+POST {{baseUrl}}/api/v1/auth/logout
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+# ==============================================================================
+# 03. STAFF & VETERINARIAN MANAGEMENT
+# ==============================================================================
+
+### 7. List Staff Members
+GET {{baseUrl}}/api/v1/staff
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 8. Create New Staff Member
+POST {{baseUrl}}/api/v1/staff
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Dr. Clara Oswald",
+  "email": "clara.oswald.test@alphavet.com",
+  "password": "password123",
+  "role": "doctor",
+  "phone": "+1-555-0391",
+  "pin": "5678",
+  "job_title" : "Senior Emergency Veterinarian",
+  "specialty": "Critical Care",
+  "license_number": "VET-CC-8821",
+  "is_available": true
+}
+
+### 9. Get Staff Member Details
+GET {{baseUrl}}/api/v1/staff/{{staffId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 10. Update Staff Member
+PUT {{baseUrl}}/api/v1/staff/{{staffId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Dr. Sarah Connor Updated",
+  "email": "sarah.connor@vetservices.com",
+  "role": "field_doctor",
+  "phone": "+1-555-9999",
+  "job_title": "Lead Ambulatory Clinician",
+  "specialty": "Equine & Herd Health",
+  "license_number": "VET-US-9902",
+  "is_available": true
+}
+
+### 11. Update Staff Availability
+PATCH {{baseUrl}}/api/v1/staff/{{staffId}}/availability
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "is_available": true
+}
+
+### 12. Update Staff Status (Active / Suspended)
+PATCH {{baseUrl}}/api/v1/staff/{{staffId}}/status
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "is_active": true
+}
+
+### 13. Delete / Archive Staff Member
+DELETE {{baseUrl}}/api/v1/staff/{{staffId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+# ==============================================================================
+# 04. CLIENT REGISTRY
+# ==============================================================================
+
+### 14. List Clients
+GET {{baseUrl}}/api/v1/clients?search=
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 15. Create Client
+POST {{baseUrl}}/api/v1/clients
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "client_type": "individual",
+  "name": "Eleanor Vance",
+  "phone_primary": "+1-555-0812",
+  "contact_person": "Eleanor",
+  "phone_secondary": "+1-555-0813",
+  "physical_address": "42 High Ridge Rd, Westwood",
+  "notes": "Always prefers morning appointments."
+}
+
+### 16. Get Client Details
+GET {{baseUrl}}/api/v1/clients/{{clientId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 17. Update Client
+PUT {{baseUrl}}/api/v1/clients/{{clientId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "client_type": "individual",
+  "name": "Carter-Cole Enterprise",
+  "phone_primary": "+1-463-563-0086",
+  "contact_person": "Jonathan Carter",
+  "notes": "Priority billing account"
+}
+
+### 18. List Patients for Client
+GET {{baseUrl}}/api/v1/clients/{{clientId}}/patients
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 19. Delete / Archive Client
+DELETE {{baseUrl}}/api/v1/clients/{{clientId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+# ==============================================================================
+# 05. PATIENT REGISTRY
+# ==============================================================================
+
+### 20. List All Patients (with optional ?search= & ?species=)
+GET {{baseUrl}}/api/v1/patients
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 21. Create Patient
+POST {{baseUrl}}/api/v1/patients
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "client_id": "{{clientId}}",
+  "name_or_tag": "Buster",
+  "species": "Canine",
+  "breed": "Labrador Retriever",
+  "gender": "neutered_male",
+  "age": 3,
+  "date_of_birth": "2023-01-15",
+  "is_approximate_age": false,
+  "microchip_number": "981020002819284",
+  "coat_color_markings": "Chocolate brown, white patch on chest",
+  "current_weight_kg": 28.5,
+  "history": "Vaccines current up to November 2026.",
+  "notes": "Friendly, loves treats.",
+  "allergies": ["Poultry"]
+}
+
+### 21. Get Patient Details
+GET {{baseUrl}}/api/v1/patients/{{patientId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 22. Update Patient
+PUT {{baseUrl}}/api/v1/patients/{{patientId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name_or_tag": "Maci",
+  "species": "Feline",
+  "gender": "spayed_female",
+  "status": "active",
+  "breed": "Domestic Shorthair",
+  "current_weight_kg": 4.5,
+  "history": "Indoor domestic feline, regular checkups.",
+  "allergies": ["Amoxicillin"]
+}
+
+### 23. List Cases for Patient
+GET {{baseUrl}}/api/v1/patients/{{patientId}}/cases
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+# ==============================================================================
+# 06. CLINICAL CASES & EMR
+# ==============================================================================
+
+### 24. Open Clinical Case
+POST {{baseUrl}}/api/v1/cases
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "patient_id": "{{patientId}}",
+  "primary_veterinarian_id": "01a17972-2196-7360-941f-17d5c633fd80",
+  "chief_complaint": "Acute onset of limping in right foreleg after playing in park.",
+  "case_type": "outpatient",
+  "priority": "routine",
+  "provisional_diagnosis" => "Soft tissue strain vs carpal ligament sprain."
+}
+
+### 25. Get Case Details
+GET {{baseUrl}}/api/v1/cases/{{caseId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 26. Update Case
+PUT {{baseUrl}}/api/v1/cases/{{caseId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "primary_veterinarian_id": "01a17972-2196-7360-941f-17d5c633fd80",
+  "chief_complaint": "Right foreleg lameness - responsive to NSAIDs.",
+  "case_type": "outpatient",
+  "status": "active",
+  "priority": "routine",
+  "provisional_diagnosis": "Mild muscle strain right triceps",
+  "final_diagnosis": "Right forelimb muscle contusion"
+}
+
+### 27. List Diagnoses for Case
+GET {{baseUrl}}/api/v1/cases/{{caseId}}/diagnoses
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 28. Add Diagnosis to Case
+POST {{baseUrl}}/api/v1/cases/{{caseId}}/diagnoses
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "diagnosis": "Right Foreleg Triceps Muscle Contusion",
+  "status": "active",
+  "description": "Blunt impact trauma while playing fetch. Radiographs negative for fractures.",
+  "notes": "Rest for 7 days with anti-inflammatory support.",
+  "diagnosed_at": "2026-10-26 19:30:00"
+}
+
+### 29. List Progress Notes (SOAP)
+GET {{baseUrl}}/api/v1/cases/{{caseId}}/progress-notes
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 30. Create Progress Note (SOAP)
+POST {{baseUrl}}/api/v1/cases/{{caseId}}/progress-notes
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "vet_id": "01a17972-2196-7360-941f-17d5c633fd80",
+  "temperature_c": 38.5,
+  "heart_rate_bpm": 95,
+  "respiratory_rate" : 20,
+  "systolic_bp": 120,
+  "diastolic_bp": 75,
+  "mucous_membrane": "Pink, moist",
+  "weight_kg": 28.4,
+  "subjective_notes": "Dog is walking with a mild weight-bearing limp on right thoracic limb.",
+  "objective_notes": "Palpation of right carpus and elbow normal. Mild discomfort elicited on deep pressure over triceps brachii muscle.",
+  "assessment_notes": "Consistent with acute muscular contusion/strain.",
+  "plan_notes": "Rest for 10 days. Meloxicam 0.1mg/kg PO SID with meal for 5 days."
+}
+
+### 31. Get Progress Note Details
+GET {{baseUrl}}/api/v1/cases/{{caseId}}/progress-notes/{{noteId}}
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 32. Sign Progress Note (Electronic Signature Lock)
+POST {{baseUrl}}/api/v1/cases/{{caseId}}/progress-notes/{{noteId}}/sign
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+# ==============================================================================
+# 07. HIGH-PRECISION FRACTIONAL INVENTORY ENGINE
+# ==============================================================================
+
+### 33. List Products & Inventory Balances
+GET {{baseUrl}}/api/v1/inventory/products
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 34. Create New Product
+POST {{baseUrl}}/api/v1/inventory/products
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Buprenorphine Injectable 0.3mg/ml",
+  "sku": "BUP-INJ-2026",
+  "base_unit": "ml",
+  "is_controlled": true,
+  "controlled_schedule": "schedule_iii",
+  "reorder_threshold": 25.0,
+  "package_description": "10ml multi-dose vial",
+  "packaging_factor": 10.0
+}
+
+### 35. Inspect Product Stock Breakdown
+GET {{baseUrl}}/api/v1/inventory/products/{{productId}}/stock
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 36. Receive Stock Shipment
+POST {{baseUrl}}/api/v1/inventory/receive
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "product_id": "{{productId}}",
+  "batch_number": "LOT-2026-9921",
+  "expiration_date": "2028-06-30",
+  "cost_per_base_unit": 0.75,
+  "containers_count": 5,
+  "base_quantity_per_container": 100.0
+}
+
+### 37. Consume Stock (with Idempotency Key)
+POST {{baseUrl}}/api/v1/inventory/consume
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: idemp-cons-001
+Content-Type: application/json
+
+{
+  "product_id": "{{productId}}",
+  "quantity": 2.5,
+  "movement_type": "dispense",
+  "reason": "Prescribed & administered for case treatment"
+}
+
+### 38. Waste / Discard Stock (with Idempotency Key)
+POST {{baseUrl}}/api/v1/inventory/waste
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: idemp-waste-001
+Content-Type: application/json
+
+{
+  "product_id": "{{productId}}",
+  "quantity": 0.5,
+  "reason": "Accidental needle hub spillage during draw"
+}
+
+# ==============================================================================
+# 08. MOBILE OFFLINE-FIRST SYNC ENGINE
+# ==============================================================================
+
+### 39. Pull Offline Deltas
+GET {{baseUrl}}/api/v1/sync/pull?since=2026-10-01T00:00:00Z
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+
+### 40. Push Offline Mutations
+POST {{baseUrl}}/api/v1/sync/push
+Accept: application/json
+X-Tenant-ID: {{tenantId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "mutations": [
+    {
+      "mutation_id": "mut_offline_001",
+      "entity_type": "patients",
+      "entity_id": "{{patientId}}",
+      "action": "update",
+      "payload": {
+        "notes": "Offline consultation notes added"
+      }
+    }
+  ]
+}

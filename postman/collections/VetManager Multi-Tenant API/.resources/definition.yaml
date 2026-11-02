@@ -1,0 +1,16 @@
+$kind: collection
+description: Complete testing suite for VetManager Veterinary EMR & High-Precision Fractional Inventory Platform.
+variables:
+  base_url: http://127.0.0.1:8000
+  tenant_id: alphavet
+  email: john.miller@alphavet.com
+  password: password123
+  device_name: Postman Test Runner
+  token: 386|rxZH5SXJM18AD7nwJ1EDxC2XZ1CmBYgfib19r4u67c9d3cf4
+  client_id: 01a17972-2241-73f1-98fb-f2e813e12f5d
+  patient_id: 01a17972-2246-7188-ad58-ea423b2ceeaa
+  case_id: 01a17972-224c-7276-a9a8-6601b257dae9
+  product_id: 01a17972-8588-7264-9b5e-bf36b0a12808
+  staff_id: 01a17972-2196-7360-941f-17d5c633fd80
+  note_id: 01a17972-2277-726b-bf30-7c9a9f337a5c
+  diagnosis_id: 01a1891f-8bfe-72c3-8f3c-d0e616ab6ad2

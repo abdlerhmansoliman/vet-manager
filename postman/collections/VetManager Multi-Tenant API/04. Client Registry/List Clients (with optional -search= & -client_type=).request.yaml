@@ -1,0 +1,12 @@
+$kind: http-request
+name: List Clients (with optional ?search= & ?client_type=)
+url: "{{base_url}}/api/v1/clients"
+method: GET
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 1000

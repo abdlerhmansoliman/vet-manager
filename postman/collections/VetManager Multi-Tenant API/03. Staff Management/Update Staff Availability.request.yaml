@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/staff/{{staff_id}}/availability"
+method: PATCH
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "is_available": true
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 5000

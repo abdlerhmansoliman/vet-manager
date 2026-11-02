@@ -1,0 +1,21 @@
+$kind: http-request
+name: List All Patients (with optional ?search= & ?species=)
+url: "{{base_url}}/api/v1/patients?species=&search="
+method: GET
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+queryParams:
+  - key: species
+    value: ""
+    disabled: true
+    description: Filter by species (Canine, Feline, Equine, Bovine, Caprine, Ovine)
+  - key: search
+    value: ""
+    disabled: true
+    description: Search by name_or_tag, breed, or microchip
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 1000

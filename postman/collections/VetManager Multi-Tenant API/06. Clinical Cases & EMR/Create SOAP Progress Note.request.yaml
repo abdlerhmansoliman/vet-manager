@@ -1,0 +1,29 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/cases/{{case_id}}/progress-notes"
+method: POST
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "vet_id": "01a17972-2196-7360-941f-17d5c633fd80",
+        "temperature_c": 38.6,
+        "heart_rate_bpm": 110,
+        "respiratory_rate": 24,
+        "systolic_bp": 125,
+        "diastolic_bp": 80,
+        "mucous_membrane": "Pink, moist, CRT < 2s",
+        "weight_kg": 4.25,
+        "subjective_notes": "Patient is alert and responsive. Owner reports no vomiting overnight.",
+        "objective_notes": "Abdomen soft and non-painful on deep palpation. Normal gut sounds present.",
+        "assessment_notes": "Gastroenteritis resolving. Hydration status normal.",
+        "plan_notes": "Discontinue IV fluid therapy. Transition to gastrointestinal wet diet. Recheck in 48 hours."
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 7000

@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/cases/{{case_id}}"
+method: PUT
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "primary_veterinarian_id": "01a17972-2196-7360-941f-17d5c633fd80",
+        "chief_complaint": "Lethargy and vomiting - improving post IV fluids.",
+        "case_type": "inpatient",
+        "status": "active",
+        "priority": "routine",
+        "provisional_diagnosis": "Acute Gastroenteritis",
+        "final_diagnosis": "Dietary Indiscretion gastritis"
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 3000

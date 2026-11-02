@@ -1,0 +1,23 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/cases"
+method: POST
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "patient_id": "{{patient_id}}",
+        "primary_veterinarian_id": "01a17972-2196-7360-941f-17d5c633fd80",
+        "chief_complaint": "Persistent lethargy, vomiting for 24 hours and decreased appetite.",
+        "case_type": "outpatient",
+        "priority": "urgent",
+        "provisional_diagnosis": "Suspected acute gastroenteritis vs dietary indiscretion."
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 1000

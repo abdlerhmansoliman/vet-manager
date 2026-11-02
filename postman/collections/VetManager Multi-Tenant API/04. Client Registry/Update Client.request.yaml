@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/clients/{{client_id}}"
+method: PUT
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "client_type": "individual",
+        "name": "Jonathan Davis Updated",
+        "phone_primary": "+1-555-0144",
+        "contact_person": "Jonathan Davis",
+        "phone_secondary": "+1-555-0199",
+        "physical_address": "742 Evergreen Terrace, Suite 2",
+        "notes": "VIP Pet Owner"
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 4000

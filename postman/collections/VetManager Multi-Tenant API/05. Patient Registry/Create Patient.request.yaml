@@ -1,0 +1,35 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/patients"
+method: POST
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "client_id": "{{client_id}}",
+        "name_or_tag": "Barnaby",
+        "species": "Canine",
+        "breed": "Golden Retriever",
+        "gender": "neutered_male",
+        "age": 4,
+        "date_of_birth": "2022-03-10",
+        "is_approximate_age": false,
+        "microchip_number": "985141002938475",
+        "ear_tag_id": null,
+        "coat_color_markings": "Golden cream with white chest star",
+        "current_weight_kg": 31.5,
+        "history": "Up to date on rabies and DHPP vaccines.",
+        "notes": "Mild anxiety during nail trims.",
+        "allergies": [
+            "Chicken protein",
+            "Flea bite hypersensitivity"
+        ]
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 2000

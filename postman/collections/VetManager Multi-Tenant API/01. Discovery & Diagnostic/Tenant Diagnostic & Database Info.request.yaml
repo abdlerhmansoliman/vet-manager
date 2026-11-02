@@ -1,0 +1,9 @@
+$kind: http-request
+url: "{{base_url}}/api/tenant/info"
+method: GET
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+auth:
+  type: noauth
+order: 2000

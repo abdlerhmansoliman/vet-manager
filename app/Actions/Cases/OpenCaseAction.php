@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Cases;
 
 use App\DTOs\Cases\OpenCaseDTO;
+use App\Enums\CaseStatus;
 use App\Models\ClinicalCase;
 
 class OpenCaseAction
@@ -21,6 +22,7 @@ class OpenCaseAction
             'patient_id' => $dto->patientId,
             'primary_veterinarian_id' => $dto->primaryVeterinarianId,
             'case_type' => $dto->caseType,
+            'status' => CaseStatus::Open,
             'priority' => $dto->priority,
             'chief_complaint' => $dto->chiefComplaint,
             'provisional_diagnosis' => $dto->provisionalDiagnosis,

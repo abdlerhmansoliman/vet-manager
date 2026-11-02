@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Models\VeterinarianProfile;
 use App\Services\Tenancy\TenantManager;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class TenantStaffSeeder extends Seeder
 {
@@ -26,14 +25,14 @@ class TenantStaffSeeder extends Seeder
         // ─── Seed Alpha Pet Hospital ───
         $this->tenantManager->switch($alphavet);
 
-        $john = User::query()->firstOrCreate(
+        $john = User::query()->updateOrCreate(
             ['email' => 'john.miller@alphavet.com'],
             [
                 'name' => 'Dr. John Miller',
-                'password' => Hash::make('password123'),
+                'password' => 'password123',
                 'role' => StaffRole::Owner,
                 'phone' => '+1-555-0101',
-                'pin' => Hash::make('1234'),
+                'pin' => '1234',
                 'is_active' => true,
             ]
         );
@@ -50,14 +49,14 @@ class TenantStaffSeeder extends Seeder
             ]
         );
 
-        $sarahAlpha = User::query()->firstOrCreate(
+        $sarahAlpha = User::query()->updateOrCreate(
             ['email' => 'sarah.connor@vetservices.com'],
             [
                 'name' => 'Dr. Sarah Connor',
-                'password' => Hash::make('password123'),
+                'password' => 'password123',
                 'role' => StaffRole::FieldDoctor,
                 'phone' => '+1-555-0202',
-                'pin' => Hash::make('5678'),
+                'pin' => '5678',
                 'is_active' => true,
             ]
         );
@@ -79,14 +78,14 @@ class TenantStaffSeeder extends Seeder
         // ─── Seed Equine & Farm Ambulatory Care ───
         $this->tenantManager->switch($equinecare);
 
-        $mark = User::query()->firstOrCreate(
+        $mark = User::query()->updateOrCreate(
             ['email' => 'mark.davis@equinecare.com'],
             [
                 'name' => 'Dr. Mark Davis',
-                'password' => Hash::make('password123'),
+                'password' => 'password123',
                 'role' => StaffRole::Owner,
                 'phone' => '+1-555-0303',
-                'pin' => Hash::make('4321'),
+                'pin' => '4321',
                 'is_active' => true,
             ]
         );
@@ -103,14 +102,14 @@ class TenantStaffSeeder extends Seeder
             ]
         );
 
-        $sarahEquine = User::query()->firstOrCreate(
+        $sarahEquine = User::query()->updateOrCreate(
             ['email' => 'sarah.connor@vetservices.com'],
             [
                 'name' => 'Dr. Sarah Connor',
-                'password' => Hash::make('password123'),
+                'password' => 'password123',
                 'role' => StaffRole::FieldDoctor,
                 'phone' => '+1-555-0202',
-                'pin' => Hash::make('5678'),
+                'pin' => '5678',
                 'is_active' => true,
             ]
         );

@@ -1,0 +1,22 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/cases/{{case_id}}/diagnoses"
+method: POST
+headers:
+  Accept: application/json
+  X-Tenant-ID: "{{tenant_id}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "diagnosis": "Acute Gastroenteritis secondary to dietary indiscretion",
+        "status": "active",
+        "description": "Patient ingested foreign food item causing acute gastric irritation.",
+        "notes": "Advised bland diet for 5 days.",
+        "diagnosed_at": "2026-10-26 19:19:56"
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{token}}"
+order: 5000

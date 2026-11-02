@@ -1,0 +1,28 @@
+name: VetManager Local Environment
+values:
+  - key: base_url
+    value: 'http://127.0.0.1:8000'
+  - key: tenant_id
+    value: alphavet
+  - key: email
+    value: john.miller@alphavet.com
+  - key: password
+    value: password123
+  - key: device_name
+    value: Postman Test Runner
+  - key: token
+    value: 386|rxZH5SXJM18AD7nwJ1EDxC2XZ1CmBYgfib19r4u67c9d3cf4
+  - key: client_id
+    value: 01a17972-2241-73f1-98fb-f2e813e12f5d
+  - key: patient_id
+    value: 01a17972-2246-7188-ad58-ea423b2ceeaa
+  - key: case_id
+    value: 01a17972-224c-7276-a9a8-6601b257dae9
+  - key: product_id
+    value: 01a17972-8588-7264-9b5e-bf36b0a12808
+  - key: staff_id
+    value: 01a17972-2196-7360-941f-17d5c633fd80
+  - key: note_id
+    value: 01a17972-2277-726b-bf30-7c9a9f337a5c
+  - key: diagnosis_id
+    value: 01a1891f-8bfe-72c3-8f3c-d0e616ab6ad2

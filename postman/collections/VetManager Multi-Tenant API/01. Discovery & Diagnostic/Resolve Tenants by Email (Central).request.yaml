@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/auth/resolve-tenants"
+method: POST
+headers:
+  Accept: application/json
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+        "email": "john.miller@alphavet.com"
+    }
+auth:
+  type: noauth
+order: 1000
