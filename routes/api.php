@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\Auth\DeleteAccountController;
 use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
@@ -57,6 +58,7 @@ Route::middleware('tenant')->group(function (): void {
             Route::get('/auth/me', MeController::class);
             Route::post('/auth/logout', LogoutController::class);
             Route::post('/auth/verify-pin', VerifyPinController::class);
+            Route::delete('/auth/account', DeleteAccountController::class);
 
             // Staff & Veterinarian Profile Management (Full CRUD)
             Route::get('/staff', [StaffController::class, 'index']);
@@ -104,6 +106,9 @@ Route::middleware('tenant')->group(function (): void {
             // High-Precision Fractional Inventory Engine
             Route::get('/inventory/products', [ProductController::class, 'index']);
             Route::post('/inventory/products', [ProductController::class, 'store']);
+            Route::get('/inventory/products/{product}', [ProductController::class, 'show']);
+            Route::put('/inventory/products/{product}', [ProductController::class, 'update']);
+            Route::delete('/inventory/products/{product}', [ProductController::class, 'destroy']);
             Route::get('/inventory/products/{product}/stock', InventoryStockController::class);
             Route::post('/inventory/receive', InventoryReceiveController::class);
 

@@ -110,4 +110,52 @@ class AuthSessionTest extends TestCase
             ->postJson('/api/v1/auth/logout')
             ->assertStatus(401);
     }
+
+    public function test_account_deletion_fails_with_invalid_password(): void
+    {
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->deleteJson('/api/v1/auth/account', [
+                'password' => 'wrong-password',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['password']);
+    }
+
+    public function test_account_deletion_succeeds_revokes_tokens_and_removes_from_landlord_lookup(): void
+    {
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->deleteJson('/api/v1/auth/account', [
+                'password' => 'password123',
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJson(['message' => 'Your account has been deleted successfully.']);
+
+        // Forget cached auth guards in test runner
+        auth()->forgetGuards();
+
+        // 1. Subsequent request with revoked token fails with 401
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->getJson('/api/v1/auth/me')
+            ->assertStatus(401);
+
+        // 2. Central resolve-tenants no longer returns alphavet for this email
+        $resolveResponse = $this->postJson('/api/v1/auth/resolve-tenants', [
+            'email' => 'john.miller@alphavet.com',
+        ]);
+        $resolveResponse->assertStatus(200);
+        $this->assertEmpty($resolveResponse->json('data'));
+
+        // 3. Login attempt with deleted account fails
+        $loginResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->postJson('/api/v1/auth/login', [
+                'email' => 'john.miller@alphavet.com',
+                'password' => 'password123',
+            ]);
+        $loginResponse->assertStatus(422);
+    }
 }
