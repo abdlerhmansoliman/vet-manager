@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Enums\ControlledSubstanceSchedule;
 use App\Enums\MeasurementBaseUnit;
+use App\Enums\StaffRole;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Tenancy\TenantManager;
@@ -384,5 +385,647 @@ class FractionalInventoryTest extends TestCase
             ->assertJsonPath('total_wasted', '0.2500')
             ->assertJsonPath('remaining_stock', '9.7500')
             ->assertJsonPath('movements.0.movement_type', 'wastage_discard');
+    }
+
+    public function test_product_show_and_404_handling(): void
+    {
+        $createResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Meloxicam 1.5mg/ml Oral Suspension',
+                'sku' => 'MELOX-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+            ]);
+
+        $createResponse->assertStatus(201);
+        $productId = $createResponse->json('data.id');
+
+        // 1. Show existing product
+        $showResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->getJson("/api/v1/inventory/products/{$productId}");
+
+        $showResponse->assertStatus(200)
+            ->assertJsonPath('data.id', $productId)
+            ->assertJsonPath('data.name', 'Meloxicam 1.5mg/ml Oral Suspension')
+            ->assertJsonPath('data.total_stock', '0.0000');
+
+        // 2. 404 for non-existent product UUID
+        $missingUuid = (string) Str::uuid();
+        $missingResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->getJson("/api/v1/inventory/products/{$missingUuid}");
+
+        $missingResponse->assertStatus(404);
+    }
+
+    public function test_product_update_validates_unique_sku_ignoring_self(): void
+    {
+        $skuA = 'SKU-A-'.uniqid();
+        $skuB = 'SKU-B-'.uniqid();
+
+        $prodA = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Product A',
+                'sku' => $skuA,
+                'base_unit' => MeasurementBaseUnit::Tablet->value,
+            ])->json('data.id');
+
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Product B',
+                'sku' => $skuB,
+                'base_unit' => MeasurementBaseUnit::Tablet->value,
+            ])->assertStatus(201);
+
+        // Update Product A keeping its own SKU -> Should succeed
+        $updateSelfResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->putJson("/api/v1/inventory/products/{$prodA}", [
+                'name' => 'Product A Renamed',
+                'sku' => $skuA,
+            ]);
+
+        $updateSelfResponse->assertStatus(200)
+            ->assertJsonPath('data.name', 'Product A Renamed');
+
+        // Update Product A with Product B's SKU -> Must fail with 422
+        $duplicateSkuResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->putJson("/api/v1/inventory/products/{$prodA}", [
+                'name' => 'Product A Renamed',
+                'sku' => $skuB,
+            ]);
+
+        $duplicateSkuResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['sku']);
+    }
+
+    public function test_product_update_prevents_changing_base_unit_when_stock_containers_exist(): void
+    {
+        $sku = 'IMMUT-'.uniqid();
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Enrofloxacin Injectable',
+                'sku' => $sku,
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+            ])->json('data.id');
+
+        // Receive stock (creating container in 'ml')
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-ENRO-1',
+                'expiration_date' => '2028-06-30',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '100.0000',
+            ])->assertStatus(201);
+
+        // Attempting to change base_unit from 'ml' to 'tablet' must fail with 422
+        $invalidMutation = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->putJson("/api/v1/inventory/products/{$productId}", [
+                'name' => 'Enrofloxacin Tablets',
+                'sku' => $sku,
+                'base_unit' => MeasurementBaseUnit::Tablet->value,
+            ]);
+
+        $invalidMutation->assertStatus(422)
+            ->assertJsonValidationErrors(['base_unit'])
+            ->assertJsonFragment(['Cannot change the base unit of a product with existing stock transactions or containers.']);
+    }
+
+    public function test_product_deletion_is_blocked_when_active_stock_balance_exists(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Isoflurane Inhalation Anesthetic',
+                'sku' => 'ISO-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+            ])->json('data.id');
+
+        // Receive 250 ml bottle
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-ISO-01',
+                'expiration_date' => '2029-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '250.0000',
+            ])->assertStatus(201);
+
+        // Attempting to delete product with positive balance must be rejected
+        $deleteResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->deleteJson("/api/v1/inventory/products/{$productId}");
+
+        $deleteResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['product']);
+    }
+
+    public function test_product_deletion_succeeds_when_stock_is_zero(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Disposable Syringes 3ml',
+                'sku' => 'SYR-3ML-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Piece->value,
+            ])->json('data.id');
+
+        // Delete product with zero stock
+        $deleteResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->deleteJson("/api/v1/inventory/products/{$productId}");
+
+        $deleteResponse->assertStatus(200)
+            ->assertJsonPath('message', 'Product archived successfully.');
+
+        // Verify product no longer appears in active catalog listing
+        $listResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->getJson('/api/v1/inventory/products');
+
+        $listResponse->assertStatus(200);
+        $ids = collect($listResponse->json('data'))->pluck('id')->all();
+        $this->assertNotContains($productId, $ids);
+    }
+
+    public function test_product_creation_rejects_invalid_enums_and_negative_thresholds(): void
+    {
+        // 1. Invalid base_unit
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Invalid Product',
+                'sku' => 'INV-'.uniqid(),
+                'base_unit' => 'liters',
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['base_unit']);
+
+        // 2. Negative reorder_threshold
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Invalid Product',
+                'sku' => 'INV-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'reorder_threshold' => -10,
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['reorder_threshold']);
+
+        // 3. Zero packaging_factor
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Invalid Product',
+                'sku' => 'INV-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'packaging_factor' => 0,
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['packaging_factor']);
+    }
+
+    public function test_receive_rejects_zero_negative_quantities_and_past_expiration(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Cefazolin 1g Vial',
+                'sku' => 'CEF-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Piece->value,
+            ])->json('data.id');
+
+        // Past expiration date
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-EXPIRED',
+                'expiration_date' => '2020-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '10.0000',
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['expiration_date']);
+
+        // Zero containers count
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-ZERO',
+                'expiration_date' => '2029-01-01',
+                'containers_count' => 0,
+                'base_quantity_per_container' => '10.0000',
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['containers_count']);
+
+        // Negative quantity per container
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-NEG',
+                'expiration_date' => '2029-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '-5.0000',
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['base_quantity_per_container']);
+    }
+
+    public function test_fractional_deduction_splits_across_open_and_sealed_containers_atomically(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Buprenorphine 0.3mg/ml',
+                'sku' => 'BUP-SPLIT-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'is_controlled' => true,
+                'controlled_schedule' => ControlledSubstanceSchedule::ScheduleIV->value,
+            ])->json('data.id');
+
+        // Receive Batch 1: 1 vial x 1.2500 ml (Expires 2027-01-01)
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-V1',
+                'expiration_date' => '2027-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '1.2500',
+            ])->assertStatus(201);
+
+        // Receive Batch 2: 1 vial x 10.0000 ml (Expires 2028-01-01)
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-V2',
+                'expiration_date' => '2028-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '10.0000',
+            ])->assertStatus(201);
+
+        // First consume 0.2500 ml to make Vial 1 'open' with remaining balance 1.0000 ml
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '0.2500',
+                'witness_id' => $this->witnessId,
+                'witness_pin' => '5678',
+            ])->assertStatus(200);
+
+        // Now, deduct 3.0000 ml.
+        // It must take 1.0000 ml from Vial 1 (depleting it), and 2.0000 ml from Vial 2 (leaving 8.0000 ml).
+        $splitConsume = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '3.0000',
+                'witness_id' => $this->witnessId,
+                'witness_pin' => '5678',
+            ]);
+
+        $splitConsume->assertStatus(200)
+            ->assertJsonPath('total_deducted', '3.0000')
+            ->assertJsonPath('remaining_stock', '8.0000')
+            ->assertJsonCount(2, 'movements'); // Verified: Exactly 2 atomic ledger rows generated
+
+        // Check stock inspection
+        $stockResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->getJson("/api/v1/inventory/products/{$productId}/stock");
+
+        $stockResponse->assertStatus(200)
+            ->assertJsonPath('data.total_base_stock', '8.0000')
+            ->assertJsonCount(1, 'data.open_containers')
+            ->assertJsonPath('data.open_containers.0.current_base_balance', '8.0000');
+    }
+
+    public function test_fractional_deduction_handles_exact_boundary_depletion_to_zero(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Xylazine 20mg/ml',
+                'sku' => 'XYL-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'is_controlled' => false,
+            ])->json('data.id');
+
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'XYL-LOT',
+                'expiration_date' => '2028-12-31',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '20.0000',
+            ])->assertStatus(201);
+
+        // Deduct exactly 20.0000 ml
+        $consumeResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '20.0000',
+            ]);
+
+        $consumeResponse->assertStatus(200)
+            ->assertJsonPath('total_deducted', '20.0000')
+            ->assertJsonPath('remaining_stock', '0.0000');
+
+        $stockResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->getJson("/api/v1/inventory/products/{$productId}/stock");
+
+        $stockResponse->assertStatus(200)
+            ->assertJsonPath('data.total_base_stock', '0.0000')
+            ->assertJsonCount(0, 'data.open_containers')
+            ->assertJsonCount(0, 'data.sealed_containers');
+
+        // Subsequent deduction must fail with 422 insufficient stock
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '0.5000',
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['quantity']);
+    }
+
+    public function test_fractional_deduction_fails_when_exceeding_stock_by_smallest_fraction(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Atropine Sulfate 0.5mg/ml',
+                'sku' => 'ATRO-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'is_controlled' => false,
+            ])->json('data.id');
+
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'ATRO-LOT',
+                'expiration_date' => '2028-12-31',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '10.0000',
+            ])->assertStatus(201);
+
+        // Attempting to deduct 10.0001 ml when only 10.0000 ml exists
+        $overdrawResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '10.0001',
+            ]);
+
+        $overdrawResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['quantity']);
+        $this->assertStringContainsString('Available: 10.0000 ml, Requested: 10.0001 ml.', (string) $overdrawResponse->json('errors.quantity.0'));
+    }
+
+    public function test_fractional_deduction_rejects_zero_and_negative_quantities(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Saline Solution 0.9%',
+                'sku' => 'SAL-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+            ])->json('data.id');
+
+        // Zero quantity
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '0.0000',
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['quantity']);
+
+        // Negative quantity
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '-5.0000',
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['quantity']);
+    }
+
+    public function test_unauthorized_staff_role_cannot_witness_controlled_substances(): void
+    {
+        $alphaTenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($alphaTenant);
+
+        // Create a Receptionist staff member
+        $receptionist = User::query()->create([
+            'name' => 'Receptionist Bob',
+            'email' => 'receptionist.'.uniqid().'@alphavet.com',
+            'password' => 'password123',
+            'role' => StaffRole::Receptionist,
+            'pin' => '7777',
+            'is_active' => true,
+        ]);
+        $receptionistId = $receptionist->id;
+        $tenantManager->reset();
+
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Fentanyl Transdermal Solution',
+                'sku' => 'FENT-SOL-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'is_controlled' => true,
+                'controlled_schedule' => ControlledSubstanceSchedule::ScheduleII->value,
+            ])->json('data.id');
+
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-FENT',
+                'expiration_date' => '2028-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '10.0000',
+            ])->assertStatus(201);
+
+        // Receptionist attempts to act as witness for Schedule II drug -> Must be rejected with 422
+        $unauthorizedWitnessResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '1.0000',
+                'witness_id' => $receptionistId,
+                'witness_pin' => '7777',
+            ]);
+
+        $unauthorizedWitnessResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['witness'])
+            ->assertJsonFragment(["Staff member with role 'receptionist' is not authorized to witness controlled substances."]);
+    }
+
+    public function test_controlled_substance_requires_witness_pin_if_witness_provided(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Midazolam 5mg/ml',
+                'sku' => 'MID-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'is_controlled' => true,
+                'controlled_schedule' => ControlledSubstanceSchedule::ScheduleIV->value,
+            ])->json('data.id');
+
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-MID',
+                'expiration_date' => '2028-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '10.0000',
+            ])->assertStatus(201);
+
+        // Witness ID provided without witness PIN -> Must be rejected with 422
+        $missingPinResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '1.0000',
+                'witness_id' => $this->witnessId,
+            ]);
+
+        $missingPinResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['witness_pin']);
+    }
+
+    public function test_uncontrolled_pharmaceutical_deduction_does_not_require_witness(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Prednisolone 5mg Tablets',
+                'sku' => 'PRED-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Tablet->value,
+                'is_controlled' => false,
+            ])->json('data.id');
+
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-PRED',
+                'expiration_date' => '2028-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '100.0000',
+            ])->assertStatus(201);
+
+        // Deduct without any witness
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/consume', [
+                'product_id' => $productId,
+                'quantity' => '4.0000',
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('total_deducted', '4.0000')
+            ->assertJsonPath('remaining_stock', '96.0000')
+            ->assertJsonPath('movements.0.witnessed_by', null);
+    }
+
+    public function test_waste_recording_enforces_witness_on_controlled_substances(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Methadone 10mg/ml',
+                'sku' => 'METH-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'is_controlled' => true,
+                'controlled_schedule' => ControlledSubstanceSchedule::ScheduleII->value,
+            ])->json('data.id');
+
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-METH',
+                'expiration_date' => '2028-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '10.0000',
+            ])->assertStatus(201);
+
+        // Attempting wastage without witness fails with 422
+        $noWitnessResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/waste', [
+                'product_id' => $productId,
+                'quantity' => '0.5000',
+                'reason' => 'Dropped and broken draw syringe',
+            ]);
+
+        $noWitnessResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['witness']);
+    }
+
+    public function test_waste_recording_fails_when_quantity_exceeds_available_stock(): void
+    {
+        $productId = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/products', [
+                'name' => 'Eye Wash Solution',
+                'sku' => 'EYE-'.uniqid(),
+                'base_unit' => MeasurementBaseUnit::Ml->value,
+                'is_controlled' => false,
+            ])->json('data.id');
+
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/inventory/receive', [
+                'product_id' => $productId,
+                'batch_number' => 'LOT-EYE',
+                'expiration_date' => '2028-01-01',
+                'containers_count' => 1,
+                'base_quantity_per_container' => '5.0000',
+            ])->assertStatus(201);
+
+        // Attempt to waste 6.0000 ml when only 5.0000 ml exists
+        $overwasteResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/inventory/waste', [
+                'product_id' => $productId,
+                'quantity' => '6.0000',
+                'reason' => 'Entire bottle contaminated',
+            ]);
+
+        $overwasteResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['quantity']);
     }
 }

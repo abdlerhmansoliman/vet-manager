@@ -37,6 +37,12 @@ class WasteStockAction
                 ]);
             }
 
+            if ($product->is_controlled && ($dto->witnessPin === null || $dto->witnessPin === '')) {
+                throw ValidationException::withMessages([
+                    'witness_pin' => ['Witness PIN is required for controlled substance transactions.'],
+                ]);
+            }
+
             if ($dto->witnessPin !== null && ! $witness->verifyPin($dto->witnessPin)) {
                 throw ValidationException::withMessages([
                     'witness_pin' => ['Invalid witness PIN.'],
