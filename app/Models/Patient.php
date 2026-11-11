@@ -92,6 +92,12 @@ class Patient extends Model
         return $this->hasMany(Diagnosis::class, 'patient_id');
     }
 
+    public function doseAdministrations(): HasMany
+    {
+        return $this->hasMany(DoseAdministration::class, 'patient_id')
+            ->orderByDesc('created_at');
+    }
+
     public function images(): MorphMany
     {
         return $this->morphMany(Image::class, 'imageable');

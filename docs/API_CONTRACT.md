@@ -543,6 +543,119 @@ Allows legal corrective addenda without modifying original clinical notes.
 
 ---
 
+### 4.6 Update Clinical Case
+- **Method**: `PUT`
+- **Path**: `/api/v1/cases/{caseId}`
+- **Headers**:
+  - `Authorization: Bearer <token>`
+  - `X-Tenant-ID: <tenant_id>`
+  - `Idempotency-Key: <uuid_v7>`
+- **Request Body**:
+  ```json
+  {
+    "chief_complaint": "Persistent lameness on right foreleg, worsened after exercise",
+    "provisional_diagnosis": "Distal metacarpal micro-fracture",
+    "final_diagnosis": "Incomplete transverse fracture right third metacarpal bone",
+    "priority": "urgent",
+    "status": "under_observation"
+  }
+  ```
+- **Validation**:
+  - `chief_complaint`: `sometimes|string|max:255`
+  - `priority`: `sometimes|in:routine,urgent,emergency_critical`
+  - `status`: `sometimes|in:open,in_progress,under_observation,closed`
+  - `provisional_diagnosis`: `nullable|string`
+  - `final_diagnosis`: `nullable|string`
+- **Response `200 OK`**: Returns updated clinical case object.
+
+---
+
+### 4.7 List Visits for Clinical Case
+- **Method**: `GET`
+- **Path**: `/api/v1/cases/{caseId}/visits`
+- **Headers**:
+  - `Authorization: Bearer <token>`
+  - `X-Tenant-ID: <tenant_id>`
+- **Response `200 OK`**:
+  ```json
+  {
+    "data": [
+      {
+        "id": "019313ea-7e23-7000-8000-000000000001",
+        "case_id": "018f4a10-5555-7000-8000-000000000010",
+        "patient_id": "018f4a08-4444-7000-8000-000000000008",
+        "title": "Initial Consultation",
+        "visit_type": "consultation",
+        "status": "completed",
+        "is_signed": true,
+        "signed_at": "2026-11-10T15:00:00Z",
+        "signed_by": "Dr. Sarah Smith",
+        "visit_date": "2026-11-10T14:30:00Z",
+        "reason_for_visit": "Acute severe limping after jumping fence",
+        "notes_count": 1,
+        "images_count": 2
+      }
+    ]
+  }
+  ```
+
+---
+
+### 4.8 Create Visit Under Clinical Case
+- **Method**: `POST`
+- **Path**: `/api/v1/cases/{caseId}/visits`
+- **Headers**:
+  - `Authorization: Bearer <token>`
+  - `X-Tenant-ID: <tenant_id>`
+  - `Idempotency-Key: <uuid_v7>`
+- **Request Body**:
+  ```json
+  {
+    "title": "Follow-up Examination & Cast Removal",
+    "visit_type": "follow_up",
+    "visit_date": "2026-11-17T10:00:00Z",
+    "reason_for_visit": "Check bone callus formation and remove fiberglass cast"
+  }
+  ```
+- **Validation**:
+  - `title`: `required|string|max:255`
+  - `visit_type`: `required|string|in:consultation,follow_up,emergency,surgery`
+  - `visit_date`: `nullable|date`
+  - `reason_for_visit`: `nullable|string`
+- **Response `201 Created`**: Returns created visit object.
+
+---
+
+### 4.9 Get Visit Details
+- **Method**: `GET`
+- **Path**: `/api/v1/visits/{visitId}`
+- **Headers**:
+  - `Authorization: Bearer <token>`
+  - `X-Tenant-ID: <tenant_id>`
+- **Response `200 OK`**: Returns visit object with attached SOAP notes, dose administrations, and images.
+
+---
+
+### 4.10 Update Visit Details
+- **Method**: `PUT`
+- **Path**: `/api/v1/visits/{visitId}`
+- **Headers**:
+  - `Authorization: Bearer <token>`
+  - `X-Tenant-ID: <tenant_id>`
+  - `Idempotency-Key: <uuid_v7>`
+- **Request Body**:
+  ```json
+  {
+    "title": "Follow-up & Splint Replacement",
+    "visit_type": "follow_up",
+    "reason_for_visit": "Splint became wet, replacement required"
+  }
+  ```
+- **Constraint**: Cannot modify a visit once it has been signed and locked (`is_signed = true`).
+- **Response `200 OK`**: Returns updated visit object.
+
+---
+
 ## 5. Active Medications & High-Precision Dose Administration
 
 ### 5.1 Prescribe Active Medication

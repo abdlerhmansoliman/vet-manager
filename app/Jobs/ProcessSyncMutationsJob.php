@@ -90,6 +90,11 @@ class ProcessSyncMutationsJob implements ShouldQueue
                     if (! empty($vet)) {
                         $vetIds[] = (string) $vet;
                     }
+                } elseif (in_array($entityType, ['visit', 'visits'], true)) {
+                    $case = $payload['case_id'] ?? null;
+                    if (! empty($case)) {
+                        $caseIds[] = (string) $case;
+                    }
                 }
             }
 
@@ -162,6 +167,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                                 'client', 'clients' => $this->applyClientMutation($action, $targetId, $payload, $existingClientIds),
                                 'patient', 'patients' => $this->applyPatientMutation($action, $targetId, $payload, $existingClientIds, $existingPatientIds),
                                 'case', 'cases', 'clinical_case', 'clinical_cases' => $this->applyCaseMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
+                                'visit', 'visits' => $this->applyVisitMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds),
                                 'progress_note', 'progress_notes', 'clinical_progress_note', 'clinical_progress_notes' => $this->applyProgressNoteMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
                                 default => throw new \InvalidArgumentException("Unsupported entity type: {$entityType}"),
                             };
@@ -680,5 +686,128 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 ]);
             }
         }
+    }
+
+    /**
+     * Ingest clinical visit mutation via atomic upsert with auto-provisioned case fallback.
+     *
+     * @param  array<string, bool>  $existingClientIds
+     * @param  array<string, bool>  $existingPatientIds
+     * @param  array<string, bool>  $existingCaseIds
+     */
+    private function applyVisitMutation(
+        string $action,
+        string $visitId,
+        array $payload,
+        string $fallbackVetId,
+        array &$existingClientIds,
+        array &$existingPatientIds,
+        array &$existingCaseIds
+    ): void {
+        if (! DB::getSchemaBuilder()->hasTable('visits')) {
+            return;
+        }
+
+        if ($action === 'delete') {
+            DB::table('visits')->where('id', $visitId)->delete();
+
+            return;
+        }
+
+        $now = now();
+        $caseId = $payload['case_id'] ?? null;
+
+        // Auto-provision case if missing to satisfy foreign key constraint
+        if ($caseId && ! isset($existingCaseIds[$caseId])) {
+            $casePatientId = ! empty($existingPatientIds) ? (string) array_key_first($existingPatientIds) : (string) DB::table('patients')->value('id');
+            if ($casePatientId === '') {
+                $casePatientId = (string) Str::uuid();
+                $clientForPatient = ! empty($existingClientIds) ? (string) array_key_first($existingClientIds) : (string) DB::table('clients')->value('id');
+                if ($clientForPatient === '') {
+                    $clientForPatient = (string) Str::uuid();
+                    DB::table('clients')->upsert(
+                        [
+                            'id' => $clientForPatient,
+                            'client_type' => 'individual',
+                            'name' => 'Auto-Registered Client',
+                            'phone_primary' => 'N/A',
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ],
+                        ['id'],
+                        ['updated_at']
+                    );
+                    $existingClientIds[$clientForPatient] = true;
+                }
+
+                DB::table('patients')->upsert(
+                    [
+                        'id' => $casePatientId,
+                        'client_id' => $clientForPatient,
+                        'name_or_tag' => 'Auto-Registered Patient',
+                        'species' => 'Canine',
+                        'gender' => 'unknown',
+                        'status' => 'active',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['id'],
+                    ['updated_at']
+                );
+                $existingPatientIds[$casePatientId] = true;
+            }
+
+            DB::table('cases')->upsert(
+                [
+                    'id' => $caseId,
+                    'case_number' => 'CAS-'.strtoupper(substr(str_replace('-', '', (string) $caseId), 0, 8)),
+                    'patient_id' => $casePatientId,
+                    'primary_veterinarian_id' => $fallbackVetId,
+                    'case_type' => 'outpatient',
+                    'status' => 'open',
+                    'priority' => 'routine',
+                    'chief_complaint' => 'Clinical Encounter',
+                    'admitted_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ],
+                ['id'],
+                ['updated_at']
+            );
+            $existingCaseIds[$caseId] = true;
+        }
+
+        if (! $caseId) {
+            $caseId = ! empty($existingCaseIds) ? (string) array_key_first($existingCaseIds) : (string) DB::table('cases')->value('id');
+        }
+
+        DB::table('visits')->upsert(
+            [
+                'id' => $visitId,
+                'case_id' => $caseId,
+                'title' => $payload['title'] ?? 'Visit',
+                'visit_type' => $payload['visit_type'] ?? 'outpatient',
+                'status' => $payload['status'] ?? 'open',
+                'is_signed' => (bool) ($payload['is_signed'] ?? false) ? 1 : 0,
+                'signed_at' => $payload['signed_at'] ?? null,
+                'signed_by' => $payload['signed_by'] ?? null,
+                'reason_for_visit' => $payload['reason_for_visit'] ?? null,
+                'visit_date' => $payload['visit_date'] ?? $now,
+                'created_at' => $payload['created_at'] ?? $now,
+                'updated_at' => $payload['updated_at'] ?? $now,
+            ],
+            ['id'],
+            [
+                'title',
+                'visit_type',
+                'status',
+                'is_signed',
+                'signed_at',
+                'signed_by',
+                'reason_for_visit',
+                'visit_date',
+                'updated_at',
+            ]
+        );
     }
 }

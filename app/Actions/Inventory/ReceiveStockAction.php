@@ -26,34 +26,53 @@ class ReceiveStockAction
         return DB::connection('tenant')->transaction(function () use ($dto, $actor): array {
             $product = InventoryProduct::query()->findOrFail($dto->productId);
 
+            // Default base_quantity_per_container to packaging_factor if omitted
+            $baseQuantityPerContainer = $dto->baseQuantityPerContainer;
+            if ($baseQuantityPerContainer === null || bccomp((string) $baseQuantityPerContainer, '0.0000', 4) <= 0) {
+                $baseQuantityPerContainer = (string) $product->packaging_factor;
+            }
+            if (bccomp((string) $baseQuantityPerContainer, '0.0000', 4) <= 0) {
+                $baseQuantityPerContainer = '1.0000';
+            }
+
+            // Calculate cost_per_base_unit from package_buy_price if provided
+            $costPerBaseUnit = $dto->costPerBaseUnit;
+            if ($costPerBaseUnit === null && $dto->packageBuyPrice !== null) {
+                $factor = bccomp((string) $product->packaging_factor, '0.0000', 4) > 0
+                    ? (string) $product->packaging_factor
+                    : $baseQuantityPerContainer;
+
+                $costPerBaseUnit = bcdiv($dto->packageBuyPrice, $factor, 4);
+            }
+
+            $totalReceived = bcmul((string) $dto->containersCount, $baseQuantityPerContainer, 4);
+
             $batch = InventoryBatch::query()->create([
                 'product_id' => $product->id,
                 'batch_number' => $dto->batchNumber,
                 'expiration_date' => $dto->expirationDate,
-                'cost_per_base_unit' => $dto->costPerBaseUnit,
+                'cost_per_base_unit' => $costPerBaseUnit,
+                'initial_base_quantity' => $totalReceived,
+                'current_base_balance' => $totalReceived,
             ]);
-
-            $totalReceived = '0.0000';
 
             for ($i = 1; $i <= $dto->containersCount; $i++) {
                 $container = InventoryContainer::query()->create([
                     'product_id' => $product->id,
                     'batch_id' => $batch->id,
                     'container_identifier' => "{$dto->batchNumber} #{$i}",
-                    'initial_base_quantity' => $dto->baseQuantityPerContainer,
-                    'current_base_balance' => $dto->baseQuantityPerContainer,
+                    'initial_base_quantity' => $baseQuantityPerContainer,
+                    'current_base_balance' => $baseQuantityPerContainer,
                     'status' => ContainerStatus::Sealed,
                 ]);
-
-                $totalReceived = bcadd($totalReceived, $dto->baseQuantityPerContainer, 4);
 
                 InventoryMovementLedger::query()->create([
                     'product_id' => $product->id,
                     'batch_id' => $batch->id,
                     'container_id' => $container->id,
                     'movement_type' => StockMovementType::Receive,
-                    'quantity' => $dto->baseQuantityPerContainer,
-                    'balance_after' => $dto->baseQuantityPerContainer,
+                    'quantity' => $baseQuantityPerContainer,
+                    'balance_after' => $baseQuantityPerContainer,
                     'reason' => "Initial receipt of Batch {$dto->batchNumber} Container #{$i}",
                     'recorded_by_user_id' => $actor->id,
                     'created_at' => now(),

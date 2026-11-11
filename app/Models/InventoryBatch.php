@@ -27,6 +27,8 @@ class InventoryBatch extends Model
         'batch_number',
         'expiration_date',
         'cost_per_base_unit',
+        'initial_base_quantity',
+        'current_base_balance',
     ];
 
     /**
@@ -37,6 +39,8 @@ class InventoryBatch extends Model
         return [
             'expiration_date' => 'date',
             'cost_per_base_unit' => 'string',
+            'initial_base_quantity' => 'string',
+            'current_base_balance' => 'string',
         ];
     }
 

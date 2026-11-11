@@ -21,7 +21,7 @@ class SyncController extends Controller
      */
     public function pull(Request $request): JsonResponse
     {
-        $limit = max(1, min((int) $request->query('limit', 500), 1000));
+        $limit = max(1, (int) $request->query('limit', 500));
         $since = $request->query('since');
 
         $fetchDeltas = function (string $tableName) use ($since, $limit) {
@@ -40,6 +40,7 @@ class SyncController extends Controller
         $clients = $fetchDeltas('clients');
         $patients = $fetchDeltas('patients');
         $cases = $fetchDeltas('cases');
+        $visits = DB::getSchemaBuilder()->hasTable('visits') ? $fetchDeltas('visits') : collect();
         $notesRaw = $fetchDeltas('clinical_progress_notes');
         $products = $fetchDeltas('inventory_products');
         $batches = $fetchDeltas('inventory_batches');
@@ -48,6 +49,7 @@ class SyncController extends Controller
         $hasMore = $clients->count() >= $limit
             || $patients->count() >= $limit
             || $cases->count() >= $limit
+            || $visits->count() >= $limit
             || $notesRaw->count() >= $limit
             || $products->count() >= $limit
             || $batches->count() >= $limit
@@ -63,7 +65,7 @@ class SyncController extends Controller
         });
 
         $maxUpdatedAt = null;
-        $collections = [$clients, $patients, $cases, $notesRaw, $products, $batches, $containers];
+        $collections = [$clients, $patients, $cases, $visits, $notesRaw, $products, $batches, $containers];
 
         foreach ($collections as $collection) {
             if ($collection->isNotEmpty()) {
@@ -88,6 +90,7 @@ class SyncController extends Controller
                 'clients' => $clients,
                 'patients' => $patients,
                 'cases' => $cases,
+                'visits' => $visits,
                 'progress_notes' => $notes,
                 'inventory_products' => $products,
                 'inventory_batches' => $batches,

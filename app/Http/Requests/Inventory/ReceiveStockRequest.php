@@ -25,8 +25,9 @@ class ReceiveStockRequest extends FormRequest
             'batch_number' => ['required', 'string', 'max:100'],
             'expiration_date' => ['required', 'date', 'after:today'],
             'cost_per_base_unit' => ['nullable', 'numeric', 'min:0'],
+            'package_buy_price' => ['nullable', 'numeric', 'min:0'],
             'containers_count' => ['required', 'integer', 'min:1', 'max:1000'],
-            'base_quantity_per_container' => ['required', 'numeric', 'min:0.0001'],
+            'base_quantity_per_container' => ['nullable', 'numeric', 'min:0.0001'],
         ];
     }
 

@@ -82,6 +82,17 @@ class InventoryProduct extends Model
      */
     public function calculateTotalStock(): string
     {
+        // 1. Primary: Sum batch balances if batches exist with current_base_balance tracked
+        if ($this->batches()->whereNotNull('current_base_balance')->exists()) {
+            $total = '0.0000';
+            foreach ($this->batches()->where('current_base_balance', '>', 0)->get() as $batch) {
+                $total = bcadd($total, (string) $batch->current_base_balance, 4);
+            }
+
+            return $total;
+        }
+
+        // 2. Fallback: Sum physical containers for legacy records
         $containers = $this->containers()
             ->whereIn('status', [ContainerStatus::Open, ContainerStatus::Sealed])
             ->get();

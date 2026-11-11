@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
 use App\Http\Controllers\Api\V1\Auth\ResolveTenantsController;
 use App\Http\Controllers\Api\V1\Auth\VerifyPinController;
+use App\Http\Controllers\Api\V1\Cases\CaseDoseAdministrationController;
 use App\Http\Controllers\Api\V1\Cases\ClinicalCaseController;
 use App\Http\Controllers\Api\V1\Cases\ClinicalProgressNoteController;
 use App\Http\Controllers\Api\V1\Cases\DiagnosisController;
@@ -17,9 +18,11 @@ use App\Http\Controllers\Api\V1\Inventory\InventoryReceiveController;
 use App\Http\Controllers\Api\V1\Inventory\InventoryStockController;
 use App\Http\Controllers\Api\V1\Inventory\InventoryWasteController;
 use App\Http\Controllers\Api\V1\Inventory\ProductController;
+use App\Http\Controllers\Api\V1\Media\MediaController;
 use App\Http\Controllers\Api\V1\Patient\PatientController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Sync\SyncController;
+use App\Http\Controllers\Api\V1\Visits\VisitController;
 use App\Models\Tenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -97,11 +100,30 @@ Route::middleware('tenant')->group(function (): void {
             Route::get('/cases/{case}/diagnoses', [DiagnosisController::class, 'index']);
             Route::post('/cases/{case}/diagnoses', [DiagnosisController::class, 'store']);
 
+            // Clinical Visits (nested under cases for list/create, flat for show/update)
+            Route::get('/cases/{case}/visits', [VisitController::class, 'index']);
+            Route::post('/cases/{case}/visits', [VisitController::class, 'store']);
+            Route::get('/visits/{visit}', [VisitController::class, 'show']);
+            Route::put('/visits/{visit}', [VisitController::class, 'update']);
+
             // Clinical Progress Notes (nested under cases)
             Route::get('/cases/{case}/progress-notes', [ClinicalProgressNoteController::class, 'index']);
             Route::post('/cases/{case}/progress-notes', [ClinicalProgressNoteController::class, 'store']);
             Route::get('/cases/{case}/progress-notes/{progressNote}', [ClinicalProgressNoteController::class, 'show']);
             Route::post('/cases/{case}/progress-notes/{progressNote}/sign', [ClinicalProgressNoteController::class, 'sign']);
+
+            // Clinical Dose Administrations (eMAR)
+            Route::get('/cases/{case}/dose-administrations', [CaseDoseAdministrationController::class, 'index']);
+            Route::post('/cases/{case}/dose-administrations', [CaseDoseAdministrationController::class, 'store']);
+
+            // Diagnostic Media & X-Rays (MinIO S3)
+            Route::get('/cases/{case}/images', [MediaController::class, 'indexForCase']);
+            Route::post('/cases/{case}/images', [MediaController::class, 'uploadForCase']);
+            Route::post('/cases/{case}/media/presigned-url', [MediaController::class, 'requestPresignedUrl']);
+            Route::post('/cases/{case}/media/confirm', [MediaController::class, 'confirmUpload']);
+            Route::get('/visits/{visit}/images', [MediaController::class, 'indexForVisit']);
+            Route::post('/visits/{visit}/images', [MediaController::class, 'uploadForVisit']);
+            Route::delete('/images/{image}', [MediaController::class, 'destroy']);
 
             // High-Precision Fractional Inventory Engine
             Route::get('/inventory/products', [ProductController::class, 'index']);

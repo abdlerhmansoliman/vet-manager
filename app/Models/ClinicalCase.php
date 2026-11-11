@@ -75,6 +75,18 @@ class ClinicalCase extends Model
             ->orderByDesc('created_at');
     }
 
+    public function doseAdministrations(): HasMany
+    {
+        return $this->hasMany(DoseAdministration::class, 'case_id')
+            ->orderByDesc('created_at');
+    }
+
+    public function visits(): HasMany
+    {
+        return $this->hasMany(Visit::class, 'case_id')
+            ->orderByDesc('visit_date');
+    }
+
     public function isOpen(): bool
     {
         return $this->status->isActive();

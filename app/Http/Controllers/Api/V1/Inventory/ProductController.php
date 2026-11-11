@@ -13,12 +13,23 @@ use App\Http\Requests\Inventory\UpdateProductRequest;
 use App\Models\InventoryProduct;
 use App\Transformers\InventoryProductTransformer;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class ProductController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $products = InventoryProduct::query()->orderBy('name')->get();
+        $query = InventoryProduct::query()->orderBy('name');
+
+        if ($request->filled('search')) {
+            $search = (string) $request->query('search');
+            $query->where(function ($q) use ($search): void {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('sku', 'like', "%{$search}%");
+            });
+        }
+
+        $products = $query->get();
 
         return response()->json([
             'data' => InventoryProductTransformer::items($products),

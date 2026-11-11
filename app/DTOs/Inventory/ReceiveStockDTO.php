@@ -10,9 +10,10 @@ final readonly class ReceiveStockDTO
         public string $productId,
         public string $batchNumber,
         public string $expirationDate,
-        public ?string $costPerBaseUnit,
-        public int $containersCount,
-        public string $baseQuantityPerContainer
+        public ?string $costPerBaseUnit = null,
+        public ?string $packageBuyPrice = null,
+        public int $containersCount = 1,
+        public ?string $baseQuantityPerContainer = null
     ) {}
 
     /**
@@ -25,8 +26,9 @@ final readonly class ReceiveStockDTO
             batchNumber: strtoupper(trim((string) $data['batch_number'])),
             expirationDate: (string) $data['expiration_date'],
             costPerBaseUnit: isset($data['cost_per_base_unit']) ? (string) $data['cost_per_base_unit'] : null,
-            containersCount: (int) $data['containers_count'],
-            baseQuantityPerContainer: (string) $data['base_quantity_per_container'],
+            packageBuyPrice: isset($data['package_buy_price']) ? (string) $data['package_buy_price'] : null,
+            containersCount: (int) ($data['containers_count'] ?? 1),
+            baseQuantityPerContainer: isset($data['base_quantity_per_container']) ? (string) $data['base_quantity_per_container'] : null,
         );
     }
 }

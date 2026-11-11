@@ -113,6 +113,13 @@ class InventoryDeductionService
                 }
                 $container->save();
 
+                $batch = $container->batch;
+                if ($batch && $batch->current_base_balance !== null && bccomp((string) $batch->current_base_balance, '0.0000', 4) > 0) {
+                    $batchNew = bcsub((string) $batch->current_base_balance, $deductFromThis, 4);
+                    $batch->current_base_balance = bccomp($batchNew, '0.0000', 4) < 0 ? '0.0000' : $batchNew;
+                    $batch->save();
+                }
+
                 $movements[] = InventoryMovementLedger::query()->create([
                     'idempotency_key' => $idempotencyKey,
                     'product_id' => $lockedProduct->id,
@@ -162,6 +169,13 @@ class InventoryDeductionService
                         $container->depleted_at = now();
                     }
                     $container->save();
+
+                    $batch = $container->batch;
+                    if ($batch && $batch->current_base_balance !== null && bccomp((string) $batch->current_base_balance, '0.0000', 4) > 0) {
+                        $batchNew = bcsub((string) $batch->current_base_balance, $deductFromThis, 4);
+                        $batch->current_base_balance = bccomp($batchNew, '0.0000', 4) < 0 ? '0.0000' : $batchNew;
+                        $batch->save();
+                    }
 
                     $movements[] = InventoryMovementLedger::query()->create([
                         'idempotency_key' => $idempotencyKey,
