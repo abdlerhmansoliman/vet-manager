@@ -39,6 +39,7 @@ class SyncController extends Controller
 
         $clients = $fetchDeltas('clients');
         $patients = $fetchDeltas('patients');
+        $species = DB::getSchemaBuilder()->hasTable('species') ? $fetchDeltas('species') : collect();
         $cases = $fetchDeltas('cases');
         $visits = DB::getSchemaBuilder()->hasTable('visits') ? $fetchDeltas('visits') : collect();
         $notesRaw = $fetchDeltas('clinical_progress_notes');
@@ -48,6 +49,7 @@ class SyncController extends Controller
 
         $hasMore = $clients->count() >= $limit
             || $patients->count() >= $limit
+            || $species->count() >= $limit
             || $cases->count() >= $limit
             || $visits->count() >= $limit
             || $notesRaw->count() >= $limit
@@ -65,7 +67,7 @@ class SyncController extends Controller
         });
 
         $maxUpdatedAt = null;
-        $collections = [$clients, $patients, $cases, $visits, $notesRaw, $products, $batches, $containers];
+        $collections = [$clients, $patients, $species, $cases, $visits, $notesRaw, $products, $batches, $containers];
 
         foreach ($collections as $collection) {
             if ($collection->isNotEmpty()) {
@@ -89,6 +91,7 @@ class SyncController extends Controller
             'deltas' => [
                 'clients' => $clients,
                 'patients' => $patients,
+                'species' => $species,
                 'cases' => $cases,
                 'visits' => $visits,
                 'progress_notes' => $notes,

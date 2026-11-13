@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\Inventory\InventoryWasteController;
 use App\Http\Controllers\Api\V1\Inventory\ProductController;
 use App\Http\Controllers\Api\V1\Media\MediaController;
 use App\Http\Controllers\Api\V1\Patient\PatientController;
+use App\Http\Controllers\Api\V1\Species\SpeciesController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Sync\SyncController;
 use App\Http\Controllers\Api\V1\Visits\VisitController;
@@ -71,6 +72,10 @@ Route::middleware('tenant')->group(function (): void {
             Route::patch('/staff/{user}/status', [StaffController::class, 'updateStatus']);
             Route::patch('/staff/{user}/availability', [StaffController::class, 'updateAvailability']);
             Route::delete('/staff/{user}', [StaffController::class, 'destroy']);
+
+            // Animal Species Taxonomy (Dynamic)
+            Route::get('/species', [SpeciesController::class, 'index']);
+            Route::post('/species', [SpeciesController::class, 'store']);
 
             // Client Registry (Full CRUD)
             Route::get('/clients', [ClientController::class, 'index']);

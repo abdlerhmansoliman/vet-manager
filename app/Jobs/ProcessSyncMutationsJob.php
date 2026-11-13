@@ -197,6 +197,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                                     'visit', 'visits' => $this->applyVisitMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds),
                                     'progress_note', 'progress_notes', 'clinical_progress_note', 'clinical_progress_notes' => $this->applyProgressNoteMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
                                     'dose', 'doses', 'dose_administration', 'dose_administrations' => $this->applyDoseMutation($action, $targetId, $payload, $fallbackVetId),
+                                    'species' => $this->applySpeciesMutation($action, $targetId, $payload),
                                     default => throw new \InvalidArgumentException("Unsupported entity type: {$entityType}"),
                                 };
 
@@ -261,6 +262,55 @@ class ProcessSyncMutationsJob implements ShouldQueue
      *
      * @param  array<string, bool>  $existingClientIds
      */
+    /**
+     * Ingest animal species mutation via atomic upsert.
+     */
+    private function applySpeciesMutation(string $action, string $speciesId, array $payload): void
+    {
+        $existing = DB::table('species')->where('id', $speciesId)->first();
+
+        $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
+        if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
+            throw new \InvalidArgumentException("Server species record is newer than incoming mutation. Mutation ignored under LWW.");
+        }
+
+        if ($action === 'delete') {
+            DB::table('species')->where('id', $speciesId)->update([
+                'deleted_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return;
+        }
+
+        $now = now();
+        $name = trim((string) ($payload['name'] ?? 'Unknown Species'));
+        $code = isset($payload['code']) && trim((string) $payload['code']) !== ''
+            ? Str::slug((string) $payload['code'], '_')
+            : Str::slug($name, '_');
+
+        DB::table('species')->upsert(
+            [
+                'id' => $speciesId,
+                'name' => $name,
+                'code' => $code,
+                'icon' => $payload['icon'] ?? null,
+                'is_system_default' => (bool) ($payload['is_system_default'] ?? false),
+                'is_active' => (bool) ($payload['is_active'] ?? true),
+                'created_at' => $payload['created_at'] ?? $now,
+                'updated_at' => $payload['updated_at'] ?? $now,
+            ],
+            ['id'],
+            [
+                'name',
+                'code',
+                'icon',
+                'is_active',
+                'updated_at',
+            ]
+        );
+    }
+
     private function applyClientMutation(string $action, string $clientId, array $payload, array &$existingClientIds): void
     {
         $existing = DB::table('clients')->where('id', $clientId)->first();
@@ -996,4 +1046,5 @@ class ProcessSyncMutationsJob implements ShouldQueue
             }
         }
     }
+
 }
