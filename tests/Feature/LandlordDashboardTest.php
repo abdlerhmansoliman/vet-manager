@@ -13,6 +13,7 @@ use App\Services\Tenancy\TenantManager;
 use Database\Seeders\LandlordUserSeeder;
 use Database\Seeders\TenantSeeder;
 use Database\Seeders\TenantStaffSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -390,7 +391,26 @@ class LandlordDashboardTest extends TestCase
             ->assertViewHas(['tenant', 'clinicalMetrics'])
             ->assertSee('Alpha Pet Hospital')
             ->assertSee('Clinical Records & Species Taxonomy')
-            ->assertSee('Registered Patients');
+            ->assertSee('Registered Patients')
+            ->assertSee('Diagnostic Media');
+    }
+
+    public function test_clinic_show_page_synchronizes_storage_used_bytes_from_images(): void
+    {
+        /** @var Tenant $tenant */
+        $tenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
+
+        // Artificially reset storage to 0
+        $tenant->update(['storage_used_bytes' => 0]);
+
+        $response = $this->actingAs($this->admin, 'landlord')->get("/central/tenants/{$tenant->id}");
+
+        $response->assertStatus(200);
+
+        $tenant->refresh();
+        $this->assertGreaterThan(0, $tenant->storage_used_bytes);
+        $expectedBytes = (int) DB::connection('tenant')->table('images')->sum('file_size_bytes');
+        $this->assertEquals($expectedBytes, $tenant->storage_used_bytes);
     }
 
     public function test_landlord_can_view_edit_clinic_page(): void

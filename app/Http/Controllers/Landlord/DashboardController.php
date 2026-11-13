@@ -119,6 +119,8 @@ class DashboardController extends Controller
             'species_count' => 0,
             'species_list' => [],
             'inventory_count' => 0,
+            'images_count' => 0,
+            'storage_used_bytes' => 0,
         ];
 
         try {
@@ -140,6 +142,17 @@ class DashboardController extends Controller
 
             if ($schema->hasTable('inventory_batches')) {
                 $clinicalMetrics['inventory_count'] = (int) DB::connection('tenant')->table('inventory_batches')->count();
+            }
+
+            if ($schema->hasTable('images')) {
+                $clinicalMetrics['images_count'] = (int) DB::connection('tenant')->table('images')->count();
+                $actualStorageUsed = (int) DB::connection('tenant')->table('images')->sum('file_size_bytes');
+                $clinicalMetrics['storage_used_bytes'] = $actualStorageUsed;
+
+                if ($tenant->storage_used_bytes !== $actualStorageUsed) {
+                    $tenant->update(['storage_used_bytes' => $actualStorageUsed]);
+                    $tenant->refresh();
+                }
             }
 
             if ($schema->hasTable('species')) {
