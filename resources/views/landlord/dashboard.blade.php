@@ -28,10 +28,10 @@
                 </button>
             </form>
 
-            <button type="button" onclick="openProvisionModal()" class="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 shadow-lg shadow-emerald-500/20 transition cursor-pointer">
+            <a href="{{ route('landlord.tenants.create') }}" class="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 shadow-lg shadow-emerald-500/20 transition cursor-pointer">
                 <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                 <span>Provision Clinic</span>
-            </button>
+            </a>
         </div>
     </div>
 
@@ -109,7 +109,7 @@
             </div>
         </div>
 
-        <!-- Card 4: Clinical Footprint (New) -->
+        <!-- Card 4: Clinical Footprint -->
         <div class="glass-card rounded-2xl p-5 relative overflow-hidden transition-all duration-300">
             <div class="flex items-center justify-between">
                 <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Clinical Volume</span>
@@ -260,7 +260,9 @@
                                     </div>
                                     <div>
                                         <div class="font-bold text-white group-hover:text-emerald-300 transition-colors flex items-center space-x-1.5">
-                                            <span>{{ $tenant->name }}</span>
+                                            <a href="{{ route('landlord.tenants.show', $tenant) }}" class="hover:underline">
+                                                {{ $tenant->name }}
+                                            </a>
                                         </div>
                                         <div class="text-xs text-slate-400 font-mono flex items-center space-x-1 mt-0.5">
                                             <span>{{ $tenant->slug }}.vetmanager.local</span>
@@ -342,21 +344,19 @@
                             <td class="py-4 px-6 text-right">
                                 <div class="flex items-center justify-end space-x-2">
                                     
-                                    <!-- Inspect Details -->
-                                    <button type="button" 
-                                            onclick="openInspectModal('{{ $tenant->id }}')" 
-                                            class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" 
-                                            title="Inspect Database, Clinical Records & Species">
+                                    <!-- Inspect Details Page Link -->
+                                    <a href="{{ route('landlord.tenants.show', $tenant) }}" 
+                                       class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" 
+                                       title="Inspect Clinic & Clinical Records">
                                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                                    </button>
+                                    </a>
 
-                                    <!-- Edit Configuration -->
-                                    <button type="button" 
-                                            onclick="openEditModal('{{ $tenant->id }}', '{{ addslashes($tenant->name) }}', '{{ $tenant->plan->value }}', {{ round($tenant->storage_limit_bytes / 1073741824) }})" 
-                                            class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" 
-                                            title="Edit Plan / Storage Ceiling">
+                                    <!-- Edit Configuration Page Link -->
+                                    <a href="{{ route('landlord.tenants.edit', $tenant) }}" 
+                                       class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" 
+                                       title="Edit Plan / Storage Ceiling">
                                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                    </button>
+                                    </a>
 
                                     <!-- Migrate DB -->
                                     <form action="{{ route('landlord.tenants.migrate', $tenant) }}" method="POST" class="inline" onsubmit="return confirm('Execute latest migrations on {{ $tenant->database_name }}?');">
@@ -407,9 +407,9 @@
                                     </div>
                                     <h4 class="text-base font-bold text-white">No clinics match current criteria</h4>
                                     <p class="text-xs text-slate-400">Try adjusting your search terms or filters, or provision a new clinical practice.</p>
-                                    <button type="button" onclick="openProvisionModal()" class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20">
+                                    <a href="{{ route('landlord.tenants.create') }}" class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20">
                                         <span>+ Provision Clinic</span>
-                                    </button>
+                                    </a>
                                 </div>
                             </td>
                         </tr>
@@ -429,177 +429,3 @@
 
 </div>
 @endsection
-
-@push('modals')
-    @include('landlord.partials.provision-modal')
-    @include('landlord.partials.edit-modal')
-    @include('landlord.partials.inspect-modal')
-@endpush
-
-@push('scripts')
-<script>
-    // Provision Modal Controls
-    function openProvisionModal() {
-        document.getElementById('modal-provision').classList.remove('hidden');
-        document.getElementById('provision-name').focus();
-    }
-
-    function closeProvisionModal() {
-        document.getElementById('modal-provision').classList.add('hidden');
-    }
-
-    const nameInput = document.getElementById('provision-name');
-    const slugInput = document.getElementById('provision-slug');
-    const previewDb = document.getElementById('preview-dbname');
-
-    if (nameInput && slugInput && previewDb) {
-        nameInput.addEventListener('input', function() {
-            if (!slugInput.dataset.manual) {
-                const slug = this.value.toLowerCase()
-                    .replace(/[^a-z0-9]/g, '')
-                    .substring(0, 20);
-                slugInput.value = slug;
-                previewDb.innerText = 'vet_tenant_' + (slug || '[slug]');
-            }
-        });
-
-        slugInput.addEventListener('input', function() {
-            this.dataset.manual = 'true';
-            const cleanSlug = this.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
-            previewDb.innerText = 'vet_tenant_' + (cleanSlug || '[slug]');
-        });
-    }
-
-    function updateDefaultStorage(gb) {
-        const storageInput = document.getElementById('provision-storage');
-        if (storageInput) {
-            storageInput.value = gb;
-        }
-    }
-
-    // Edit Modal Controls
-    function openEditModal(id, name, plan, storageGb) {
-        const modal = document.getElementById('modal-edit');
-        const form = document.getElementById('form-edit-tenant');
-        
-        form.action = '/central/tenants/' + id;
-        document.getElementById('edit-name').value = name;
-        document.getElementById('edit-plan').value = plan;
-        document.getElementById('edit-storage').value = storageGb;
-
-        modal.classList.remove('hidden');
-    }
-
-    function closeEditModal() {
-        document.getElementById('modal-edit').classList.add('hidden');
-    }
-
-    // Inspect Details Modal Controls
-    async function openInspectModal(id) {
-        const modal = document.getElementById('modal-inspect');
-        const loading = document.getElementById('inspect-loading');
-        const dataContainer = document.getElementById('inspect-data');
-        
-        modal.classList.remove('hidden');
-        loading.classList.remove('hidden');
-        dataContainer.classList.add('hidden');
-
-        try {
-            const res = await fetch('/central/tenants/' + id, {
-                headers: { 'Accept': 'application/json' }
-            });
-            if (!res.ok) throw new Error('Failed to load clinic metadata');
-            const data = await res.json();
-
-            document.getElementById('inspect-name').innerText = data.name;
-            document.getElementById('inspect-slug').innerText = data.slug + '.vetmanager.local';
-            document.getElementById('inspect-plan').innerText = data.plan;
-            document.getElementById('inspect-uuid').innerText = data.id;
-            document.getElementById('inspect-dbname').innerText = data.database_name;
-            document.getElementById('inspect-header-hint').innerText = data.slug;
-            document.getElementById('inspect-created-at').innerText = data.created_at;
-
-            const badge = document.getElementById('inspect-status-badge');
-            if (data.status === 'active') {
-                badge.className = 'px-2 py-0.5 text-[10px] font-semibold uppercase rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-                badge.innerText = 'Active';
-            } else if (data.status === 'provisioning') {
-                badge.className = 'px-2 py-0.5 text-[10px] font-semibold uppercase rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20';
-                badge.innerText = 'Provisioning';
-            } else if (data.status === 'failed') {
-                badge.className = 'px-2 py-0.5 text-[10px] font-semibold uppercase rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20';
-                badge.innerText = 'Failed';
-            } else {
-                badge.className = 'px-2 py-0.5 text-[10px] font-semibold uppercase rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20';
-                badge.innerText = 'Suspended';
-            }
-
-            // Clinical Telemetry & Dynamic Species
-            const cm = data.clinical_metrics || {};
-            document.getElementById('inspect-clinical-patients').innerText = cm.patients_count ?? 0;
-            document.getElementById('inspect-clinical-cases').innerText = cm.cases_count ?? 0;
-            document.getElementById('inspect-clinical-visits').innerText = cm.visits_count ?? 0;
-            document.getElementById('inspect-clinical-species').innerText = cm.species_count ?? 0;
-
-            const dbStatus = document.getElementById('inspect-db-status');
-            if (cm.database_connected) {
-                dbStatus.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-                dbStatus.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>Schema Online';
-            } else {
-                dbStatus.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20';
-                dbStatus.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-400 mr-1.5"></span>Schema Offline';
-            }
-
-            const speciesList = document.getElementById('inspect-species-list');
-            speciesList.innerHTML = '';
-            if (cm.species_list && cm.species_list.length > 0) {
-                cm.species_list.forEach(sp => {
-                    const chip = document.createElement('span');
-                    const isDef = sp.is_system_default;
-                    chip.className = isDef
-                        ? 'inline-flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-medium text-slate-200'
-                        : 'inline-flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-xs font-medium text-purple-200';
-                    chip.innerHTML = `<span>${sp.name}</span> <span class="text-[9px] uppercase px-1 py-0.5 rounded ${isDef ? 'bg-slate-800 text-slate-400' : 'bg-purple-500/30 text-purple-300 font-bold'}">${isDef ? 'Default' : 'Custom'}</span>`;
-                    speciesList.appendChild(chip);
-                });
-            } else {
-                const empty = document.createElement('span');
-                empty.className = 'text-xs text-slate-500 italic';
-                empty.innerText = 'No species initialized in database.';
-                speciesList.appendChild(empty);
-            }
-
-            document.getElementById('inspect-storage-label').innerText = `${data.storage_used_formatted} / ${data.storage_limit_formatted} (${data.storage_percentage}%)`;
-            document.getElementById('inspect-storage-bar').style.width = Math.max(data.storage_percentage, 2) + '%';
-
-            document.getElementById('inspect-staff-count').innerText = data.staff_count;
-            const staffList = document.getElementById('inspect-staff-list');
-            staffList.innerHTML = '';
-            
-            if (data.staff_emails && data.staff_emails.length > 0) {
-                data.staff_emails.forEach(email => {
-                    const pill = document.createElement('span');
-                    pill.className = 'inline-flex items-center px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-slate-300';
-                    pill.innerText = email;
-                    staffList.appendChild(pill);
-                });
-            } else {
-                const empty = document.createElement('span');
-                empty.className = 'text-xs text-slate-500 italic';
-                empty.innerText = 'No staff members registered in discovery lookup yet.';
-                staffList.appendChild(empty);
-            }
-
-            loading.classList.add('hidden');
-            dataContainer.classList.remove('hidden');
-        } catch (err) {
-            alert('Failed to inspect clinic: ' + err.message);
-            closeInspectModal();
-        }
-    }
-
-    function closeInspectModal() {
-        document.getElementById('modal-inspect').classList.add('hidden');
-    }
-</script>
-@endpush

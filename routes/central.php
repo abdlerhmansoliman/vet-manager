@@ -28,9 +28,11 @@ Route::middleware('auth:landlord')->group(function (): void {
     Route::post('/logout', [AuthController::class, 'destroy'])->name('landlord.logout');
 
     Route::get('/', [DashboardController::class, 'index'])->name('landlord.dashboard');
+    Route::get('/tenants/create', [DashboardController::class, 'create'])->name('landlord.tenants.create');
     Route::post('/tenants', [DashboardController::class, 'store'])->name('landlord.tenants.store');
     Route::post('/tenants/migrate-all', [DashboardController::class, 'migrateAll'])->name('landlord.tenants.migrate-all');
     Route::get('/tenants/{tenant}', [DashboardController::class, 'show'])->name('landlord.tenants.show');
+    Route::get('/tenants/{tenant}/edit', [DashboardController::class, 'edit'])->name('landlord.tenants.edit');
     Route::put('/tenants/{tenant}', [DashboardController::class, 'update'])->name('landlord.tenants.update');
     Route::patch('/tenants/{tenant}/status', [DashboardController::class, 'toggleStatus'])->name('landlord.tenants.toggle-status');
     Route::post('/tenants/{tenant}/migrate', [DashboardController::class, 'migrate'])->name('landlord.tenants.migrate');

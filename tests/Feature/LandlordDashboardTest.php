@@ -366,4 +366,44 @@ class LandlordDashboardTest extends TestCase
 
         $tenant->delete();
     }
+
+    public function test_landlord_can_view_provision_clinic_page(): void
+    {
+        $response = $this->actingAs($this->admin, 'landlord')->get('/central/tenants/create');
+
+        $response->assertStatus(200)
+            ->assertViewIs('landlord.create')
+            ->assertViewHas('availablePlans')
+            ->assertSee('Provision Veterinary Clinic')
+            ->assertSee('Subdomain (System Identifier)');
+    }
+
+    public function test_landlord_can_view_clinic_show_page_with_clinical_telemetry(): void
+    {
+        /** @var Tenant $tenant */
+        $tenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
+
+        $response = $this->actingAs($this->admin, 'landlord')->get("/central/tenants/{$tenant->id}");
+
+        $response->assertStatus(200)
+            ->assertViewIs('landlord.show')
+            ->assertViewHas(['tenant', 'clinicalMetrics'])
+            ->assertSee('Alpha Pet Hospital')
+            ->assertSee('Clinical Records & Species Taxonomy')
+            ->assertSee('Registered Patients');
+    }
+
+    public function test_landlord_can_view_edit_clinic_page(): void
+    {
+        /** @var Tenant $tenant */
+        $tenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
+
+        $response = $this->actingAs($this->admin, 'landlord')->get("/central/tenants/{$tenant->id}/edit");
+
+        $response->assertStatus(200)
+            ->assertViewIs('landlord.edit')
+            ->assertViewHas(['tenant', 'availablePlans'])
+            ->assertSee('Edit Clinic Configuration')
+            ->assertSee('Alpha Pet Hospital');
+    }
 }

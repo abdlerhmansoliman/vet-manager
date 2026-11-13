@@ -80,15 +80,14 @@
 
                 <!-- Primary Action & User Auth Profile -->
                 <div class="flex items-center space-x-3">
-                    <button type="button" 
-                            onclick="openProvisionModal()" 
-                            id="btn-open-provision"
-                            class="inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 shadow-lg shadow-emerald-600/25 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all duration-200 cursor-pointer active:scale-95">
+                    <a href="{{ route('landlord.tenants.create') }}" 
+                       id="btn-open-provision"
+                       class="inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 shadow-lg shadow-emerald-600/25 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all duration-200 cursor-pointer active:scale-95">
                         <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                         </svg>
                         <span>Provision Clinic</span>
-                    </button>
+                    </a>
 
                     @if (auth('landlord')->check())
                         <div class="flex items-center space-x-3 pl-3 border-l border-slate-800">
