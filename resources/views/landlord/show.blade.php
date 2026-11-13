@@ -134,8 +134,8 @@
             @endif
         </div>
 
-        <!-- 4 Large Clinical KPI Metric Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <!-- 5 Clinical & Diagnostic Media KPI Metric Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3.5">
             <div class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
                 <span class="text-xs uppercase tracking-wider text-slate-400 font-semibold block">Registered Patients</span>
                 <span class="text-3xl font-extrabold text-white font-mono">{{ $clinicalMetrics['patients_count'] }}</span>
@@ -147,6 +147,10 @@
             <div class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
                 <span class="text-xs uppercase tracking-wider text-slate-400 font-semibold block">Clinical Visits</span>
                 <span class="text-3xl font-extrabold text-cyan-400 font-mono">{{ $clinicalMetrics['visits_count'] }}</span>
+            </div>
+            <div class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                <span class="text-xs uppercase tracking-wider text-slate-400 font-semibold block">Diagnostic Media</span>
+                <span class="text-3xl font-extrabold text-teal-400 font-mono">{{ $clinicalMetrics['images_count'] ?? 0 }} <span class="text-xs font-normal text-slate-400">files</span></span>
             </div>
             <div class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
                 <span class="text-xs uppercase tracking-wider text-slate-400 font-semibold block">Configured Species</span>
@@ -207,10 +211,13 @@
 
         <!-- Storage Quota Breakdown -->
         <div class="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-            <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center space-x-2">
-                <svg class="w-4 h-4 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7zm0 5h16"/></svg>
-                <span>Storage Quota (MinIO / Cloudflare R2)</span>
-            </h2>
+            <div class="flex items-center justify-between">
+                <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                    <svg class="w-4 h-4 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7zm0 5h16"/></svg>
+                    <span>Storage Quota (MinIO / Cloudflare R2)</span>
+                </h2>
+                <span class="text-xs text-slate-400 font-mono">{{ $clinicalMetrics['images_count'] ?? 0 }} Diagnostic Files</span>
+            </div>
 
             <div class="space-y-3 pt-1">
                 <div class="flex items-center justify-between text-xs">

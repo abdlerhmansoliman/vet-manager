@@ -74,12 +74,22 @@ class GetLandlordMetricsAction
                         $activeSpeciesCodes[$code] = true;
                     }
                 }
+
+                if (DB::connection('tenant')->getSchemaBuilder()->hasTable('images')) {
+                    $clinicStorage = (int) DB::connection('tenant')->table('images')->sum('file_size_bytes');
+                    if ($tenant->storage_used_bytes !== $clinicStorage) {
+                        $tenant->update(['storage_used_bytes' => $clinicStorage]);
+                    }
+                }
             } catch (Throwable) {
                 // If a tenant database schema is temporarily unreachable, skip gracefully
             } finally {
                 $this->tenantManager->reset();
             }
         }
+
+        // Refresh storage used total after live tenant sync
+        $totalStorageUsed = (int) Tenant::query()->sum('storage_used_bytes');
 
         return [
             'total_clinics' => $totalClinics,

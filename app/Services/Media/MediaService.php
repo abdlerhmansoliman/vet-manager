@@ -6,6 +6,7 @@ namespace App\Services\Media;
 
 use App\Models\ClinicalCase;
 use App\Models\Image;
+use App\Models\Tenant;
 use App\Models\Visit;
 use App\Services\Tenancy\TenantManager;
 use Illuminate\Database\Eloquent\Collection;
@@ -56,7 +57,7 @@ class MediaService
 
         $url = Storage::disk('s3')->url($path);
 
-        return Image::query()->create([
+        $image = Image::query()->create([
             'id' => (string) Str::uuid(),
             'imageable_type' => $imageableType,
             'imageable_id' => (string) $model->getKey(),
@@ -65,6 +66,13 @@ class MediaService
             'mime_type' => $file->getMimeType(),
             'file_size_bytes' => $file->getSize(),
         ]);
+
+        $tenantModel = $this->tenantManager->current() ?? Tenant::query()->find($effectiveTenantId);
+        if ($tenantModel && ($image->file_size_bytes ?? 0) > 0) {
+            $tenantModel->increment('storage_used_bytes', $image->file_size_bytes);
+        }
+
+        return $image;
     }
 
     /**
@@ -209,7 +217,7 @@ class MediaService
         $imageableType = $visitId ? 'visits' : 'cases';
         $imageableId = $visitId ?? (string) $case->getKey();
 
-        return Image::query()->updateOrCreate(
+        $image = Image::query()->updateOrCreate(
             ['url' => $fileUrl],
             [
                 'id' => $imageId ?? (string) Str::uuid(),
@@ -220,6 +228,13 @@ class MediaService
                 'file_size_bytes' => $fileSizeBytes ?? 0,
             ]
         );
+
+        $tenantModel = $this->tenantManager->current();
+        if ($tenantModel && ($image->file_size_bytes ?? 0) > 0) {
+            $tenantModel->increment('storage_used_bytes', $image->file_size_bytes);
+        }
+
+        return $image;
     }
 
     /**
@@ -234,6 +249,11 @@ class MediaService
                 $path = substr($path, strlen('vet-media/'));
             }
             Storage::disk('s3')->delete($path);
+        }
+
+        $tenantModel = $this->tenantManager->current();
+        if ($tenantModel && ($image->file_size_bytes ?? 0) > 0) {
+            $tenantModel->decrement('storage_used_bytes', min($tenantModel->storage_used_bytes, $image->file_size_bytes));
         }
 
         $image->delete();
