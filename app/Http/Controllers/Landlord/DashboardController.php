@@ -81,6 +81,16 @@ class DashboardController extends Controller
     }
 
     /**
+     * Display the dedicated provision new clinic page.
+     */
+    public function create(): View
+    {
+        return view('landlord.create', [
+            'availablePlans' => TenantPlan::cases(),
+        ]);
+    }
+
+    /**
      * Provision a brand-new veterinary clinic tenant with isolated database.
      */
     public function store(ProvisionTenantRequest $request, ProvisionTenantAction $action): RedirectResponse
@@ -94,9 +104,10 @@ class DashboardController extends Controller
     }
 
     /**
-     * Retrieve tenant details and live clinical telemetry as JSON for inspection modal.
+     * Retrieve tenant details and live clinical telemetry.
+     * Returns JSON for API / testing or dedicated full Blade view for web users.
      */
-    public function show(Tenant $tenant): JsonResponse
+    public function show(Tenant $tenant, Request $request): JsonResponse|View
     {
         $tenant->load('staffLookups');
 
@@ -152,23 +163,41 @@ class DashboardController extends Controller
             $this->tenantManager->reset();
         }
 
-        return response()->json([
-            'id' => $tenant->id,
-            'name' => $tenant->name,
-            'slug' => $tenant->slug,
-            'database_name' => $tenant->database_name,
-            'plan' => $tenant->plan->value,
-            'status' => $tenant->status->value,
-            'storage_limit_bytes' => $tenant->storage_limit_bytes,
-            'storage_used_bytes' => $tenant->storage_used_bytes,
-            'storage_limit_formatted' => $tenant->formattedStorageLimit(),
-            'storage_used_formatted' => $tenant->formattedStorageUsed(),
-            'storage_percentage' => $tenant->storageUsagePercentage(),
-            'staff_count' => $tenant->staffLookups->count(),
-            'staff_emails' => $tenant->staffLookups->pluck('email')->values()->all(),
-            'created_at' => $tenant->created_at?->format('M d, Y H:i UTC'),
-            'updated_at' => $tenant->updated_at?->format('M d, Y H:i UTC'),
-            'clinical_metrics' => $clinicalMetrics,
+        if ($request->wantsJson()) {
+            return response()->json([
+                'id' => $tenant->id,
+                'name' => $tenant->name,
+                'slug' => $tenant->slug,
+                'database_name' => $tenant->database_name,
+                'plan' => $tenant->plan->value,
+                'status' => $tenant->status->value,
+                'storage_limit_bytes' => $tenant->storage_limit_bytes,
+                'storage_used_bytes' => $tenant->storage_used_bytes,
+                'storage_limit_formatted' => $tenant->formattedStorageLimit(),
+                'storage_used_formatted' => $tenant->formattedStorageUsed(),
+                'storage_percentage' => $tenant->storageUsagePercentage(),
+                'staff_count' => $tenant->staffLookups->count(),
+                'staff_emails' => $tenant->staffLookups->pluck('email')->values()->all(),
+                'created_at' => $tenant->created_at?->format('M d, Y H:i UTC'),
+                'updated_at' => $tenant->updated_at?->format('M d, Y H:i UTC'),
+                'clinical_metrics' => $clinicalMetrics,
+            ]);
+        }
+
+        return view('landlord.show', [
+            'tenant' => $tenant,
+            'clinicalMetrics' => $clinicalMetrics,
+        ]);
+    }
+
+    /**
+     * Display the dedicated edit clinic configuration page.
+     */
+    public function edit(Tenant $tenant): View
+    {
+        return view('landlord.edit', [
+            'tenant' => $tenant,
+            'availablePlans' => TenantPlan::cases(),
         ]);
     }
 
