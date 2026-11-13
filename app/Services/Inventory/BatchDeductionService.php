@@ -10,6 +10,7 @@ use App\Models\InventoryMovementLedger;
 use App\Models\InventoryProduct;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class BatchDeductionService
@@ -125,7 +126,7 @@ class BatchDeductionService
                 $targetBatch = $batches->last() ?? InventoryBatch::query()->where('product_id', $lockedProduct->id)->latest('expiration_date')->first();
                 if (! $targetBatch instanceof InventoryBatch) {
                     $targetBatch = InventoryBatch::query()->create([
-                        'id' => (string) \Illuminate\Support\Str::uuid(),
+                        'id' => (string) Str::uuid(),
                         'product_id' => $lockedProduct->id,
                         'batch_number' => 'BATCH-RECONCILIATION-001',
                         'expiration_date' => now()->addYear(),

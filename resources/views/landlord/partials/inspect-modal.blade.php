@@ -14,7 +14,7 @@
                     </div>
                     <div>
                         <h3 class="text-lg font-bold text-white tracking-tight" id="inspect-title">Clinic Infrastructure Inspector</h3>
-                        <p class="text-xs text-slate-400">Isolated database connection parameters, storage utilization, and staff discovery lookup.</p>
+                        <p class="text-xs text-slate-400">Isolated database connection parameters, clinical footprint, species taxonomy, and storage utilization.</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeInspectModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
@@ -26,7 +26,7 @@
                 <!-- Loading State -->
                 <div id="inspect-loading" class="py-12 flex flex-col items-center justify-center space-y-3">
                     <div class="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-                    <p class="text-xs text-slate-400">Querying central landlord registry...</p>
+                    <p class="text-xs text-slate-400">Querying central landlord registry & tenant database...</p>
                 </div>
 
                 <!-- Data Container -->
@@ -45,6 +45,47 @@
                         <div class="text-right">
                             <span class="text-[11px] text-slate-500 block">Tenant UUID</span>
                             <span class="text-xs font-mono text-slate-300 select-all" id="inspect-uuid"></span>
+                        </div>
+                    </div>
+
+                    <!-- Clinical Footprint & Dynamic Species Taxonomy -->
+                    <div class="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h5 class="text-xs font-semibold uppercase text-slate-400 tracking-wider flex items-center space-x-1.5">
+                                <svg class="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                                </svg>
+                                <span>Clinical Records & Species Taxonomy</span>
+                            </h5>
+                            <span id="inspect-db-status" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"></span>
+                        </div>
+
+                        <!-- 4 Mini Metric Cards -->
+                        <div class="grid grid-cols-4 gap-2 text-center">
+                            <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                                <span class="text-[10px] uppercase text-slate-400 block font-semibold">Patients</span>
+                                <span class="text-base font-extrabold text-white font-mono" id="inspect-clinical-patients">0</span>
+                            </div>
+                            <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                                <span class="text-[10px] uppercase text-slate-400 block font-semibold">Cases</span>
+                                <span class="text-base font-extrabold text-emerald-400 font-mono" id="inspect-clinical-cases">0</span>
+                            </div>
+                            <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                                <span class="text-[10px] uppercase text-slate-400 block font-semibold">Visits</span>
+                                <span class="text-base font-extrabold text-cyan-400 font-mono" id="inspect-clinical-visits">0</span>
+                            </div>
+                            <div class="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                                <span class="text-[10px] uppercase text-slate-400 block font-semibold">Species</span>
+                                <span class="text-base font-extrabold text-purple-400 font-mono" id="inspect-clinical-species">0</span>
+                            </div>
+                        </div>
+
+                        <!-- Configured Species Chips -->
+                        <div class="space-y-1.5 pt-1">
+                            <span class="text-[11px] text-slate-400 block">Configured Species (System Defaults & Clinic Custom):</span>
+                            <div id="inspect-species-list" class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pt-1">
+                                <!-- Populated dynamically -->
+                            </div>
                         </div>
                     </div>
 

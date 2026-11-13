@@ -85,6 +85,16 @@ class Tenant extends Model
         return $this->status === TenantStatus::Suspended;
     }
 
+    public function isProvisioning(): bool
+    {
+        return $this->status === TenantStatus::Provisioning;
+    }
+
+    public function isFailed(): bool
+    {
+        return $this->status === TenantStatus::Failed;
+    }
+
     /**
      * Determine if tenant has sufficient storage quota for an upcoming upload.
      */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Landlord;
 
 use App\Actions\Landlord\GetLandlordMetricsAction;
+use App\Actions\Landlord\MigrateAllTenantsAction;
 use App\Actions\Landlord\MigrateTenantAction;
 use App\Actions\Landlord\ProvisionTenantAction;
 use App\Actions\Landlord\ToggleTenantStatusAction;
@@ -20,10 +21,16 @@ use App\Services\Tenancy\TenantManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use Throwable;
 
 class DashboardController extends Controller
 {
+    public function __construct(
+        private readonly TenantManager $tenantManager
+    ) {}
+
     /**
      * Display the central platform landlord management dashboard.
      */
@@ -87,11 +94,63 @@ class DashboardController extends Controller
     }
 
     /**
-     * Retrieve tenant details as JSON for inspection modal.
+     * Retrieve tenant details and live clinical telemetry as JSON for inspection modal.
      */
     public function show(Tenant $tenant): JsonResponse
     {
         $tenant->load('staffLookups');
+
+        $clinicalMetrics = [
+            'database_connected' => false,
+            'patients_count' => 0,
+            'cases_count' => 0,
+            'visits_count' => 0,
+            'species_count' => 0,
+            'species_list' => [],
+            'inventory_count' => 0,
+        ];
+
+        try {
+            $this->tenantManager->switch($tenant);
+            $schema = DB::connection('tenant')->getSchemaBuilder();
+            $clinicalMetrics['database_connected'] = true;
+
+            if ($schema->hasTable('patients')) {
+                $clinicalMetrics['patients_count'] = (int) DB::connection('tenant')->table('patients')->count();
+            }
+
+            if ($schema->hasTable('cases')) {
+                $clinicalMetrics['cases_count'] = (int) DB::connection('tenant')->table('cases')->count();
+            }
+
+            if ($schema->hasTable('visits')) {
+                $clinicalMetrics['visits_count'] = (int) DB::connection('tenant')->table('visits')->count();
+            }
+
+            if ($schema->hasTable('inventory_batches')) {
+                $clinicalMetrics['inventory_count'] = (int) DB::connection('tenant')->table('inventory_batches')->count();
+            }
+
+            if ($schema->hasTable('species')) {
+                $speciesRows = DB::connection('tenant')->table('species')
+                    ->where('is_active', true)
+                    ->select('name', 'code', 'icon', 'is_system_default')
+                    ->orderBy('name')
+                    ->get();
+
+                $clinicalMetrics['species_count'] = $speciesRows->count();
+                $clinicalMetrics['species_list'] = $speciesRows->map(fn ($s) => [
+                    'name' => $s->name,
+                    'code' => $s->code,
+                    'icon' => $s->icon,
+                    'is_system_default' => (bool) $s->is_system_default,
+                ])->all();
+            }
+        } catch (Throwable $e) {
+            $clinicalMetrics['error'] = $e->getMessage();
+        } finally {
+            $this->tenantManager->reset();
+        }
 
         return response()->json([
             'id' => $tenant->id,
@@ -109,6 +168,7 @@ class DashboardController extends Controller
             'staff_emails' => $tenant->staffLookups->pluck('email')->values()->all(),
             'created_at' => $tenant->created_at?->format('M d, Y H:i UTC'),
             'updated_at' => $tenant->updated_at?->format('M d, Y H:i UTC'),
+            'clinical_metrics' => $clinicalMetrics,
         ]);
     }
 
@@ -154,12 +214,27 @@ class DashboardController extends Controller
     }
 
     /**
+     * Batch migrate all active tenant schemas across the platform.
+     */
+    public function migrateAll(MigrateAllTenantsAction $action): RedirectResponse
+    {
+        $result = $action->execute();
+
+        $msg = "Batch migrations executed: {$result['migrated']} of {$result['total']} active clinics migrated successfully.";
+        if ($result['failed'] > 0) {
+            $msg .= " ({$result['failed']} clinics encountered errors; check system logs).";
+        }
+
+        return redirect()->route('landlord.dashboard')->with('success', $msg);
+    }
+
+    /**
      * Purge clinic and drop its isolated database.
      */
-    public function destroy(Tenant $tenant, TenantManager $tenantManager): RedirectResponse
+    public function destroy(Tenant $tenant): RedirectResponse
     {
         $name = $tenant->name;
-        $tenantManager->dropDatabase($tenant);
+        $this->tenantManager->dropDatabase($tenant);
         $tenant->delete();
 
         return redirect()->route('landlord.dashboard')->with(

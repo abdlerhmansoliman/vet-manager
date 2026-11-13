@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Enums\TenantPlan;
 use App\Enums\TenantStatus;
+use App\Jobs\Landlord\ProvisionTenantJob;
 use App\Models\LandlordUser;
 use App\Models\Tenant;
 use App\Services\Tenancy\TenantManager;
@@ -170,6 +171,15 @@ class LandlordDashboardTest extends TestCase
                 'storage_percentage',
                 'staff_count',
                 'staff_emails',
+                'clinical_metrics' => [
+                    'database_connected',
+                    'patients_count',
+                    'cases_count',
+                    'visits_count',
+                    'species_count',
+                    'species_list',
+                    'inventory_count',
+                ],
             ]);
     }
 
@@ -303,5 +313,57 @@ class LandlordDashboardTest extends TestCase
         $this->assertDatabaseMissing('tenants', [
             'id' => $tenant->id,
         ], 'landlord');
+    }
+
+    public function test_landlord_can_batch_migrate_all_tenant_databases(): void
+    {
+        $response = $this->actingAs($this->admin, 'landlord')->post('/central/tenants/migrate-all');
+
+        $response->assertRedirect(route('landlord.dashboard'))
+            ->assertSessionHas('success');
+    }
+
+    public function test_provision_tenant_job_rolls_back_atomically_on_failure(): void
+    {
+        $uniqueSuffix = substr(Str::slug((string) Str::uuid()), 0, 8);
+        $slug = 'failtest'.$uniqueSuffix;
+        $tenantId = (string) Str::uuid();
+
+        /** @var Tenant $tenant */
+        $tenant = Tenant::query()->create([
+            'id' => $tenantId,
+            'name' => 'Failing Clinic',
+            'slug' => $slug,
+            'database_name' => "vet_tenant_{$slug}",
+            'storage_limit_bytes' => 10 * 1024 * 1024 * 1024,
+            'storage_used_bytes' => 0,
+            'status' => TenantStatus::Provisioning,
+            'plan' => TenantPlan::Clinic,
+        ]);
+
+        $mockTenantManager = \Mockery::mock(TenantManager::class);
+        $mockTenantManager->shouldReceive('createDatabase')
+            ->once()
+            ->andThrow(new \RuntimeException('Simulated DDL failure'));
+        $mockTenantManager->shouldReceive('reset')->twice();
+        $mockTenantManager->shouldReceive('dropDatabase')->once();
+
+        try {
+            (new ProvisionTenantJob(
+                tenantId: $tenant->id,
+                ownerName: 'Test Owner',
+                ownerEmail: 'fail.owner@test.com',
+                ownerPassword: 'password123',
+            ))->handle($mockTenantManager);
+            $this->fail('Expected exception was not thrown');
+        } catch (\RuntimeException $e) {
+            $this->assertEquals('Simulated DDL failure', $e->getMessage());
+        }
+
+        $tenant->refresh();
+        $this->assertEquals(TenantStatus::Failed, $tenant->status);
+        $this->assertTrue($tenant->isFailed());
+
+        $tenant->delete();
     }
 }
