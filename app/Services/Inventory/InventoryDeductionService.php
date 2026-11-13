@@ -29,7 +29,8 @@ class InventoryDeductionService
         StockMovementType $movementType = StockMovementType::DoseAdministration,
         ?User $witness = null,
         ?string $reason = null,
-        ?string $idempotencyKey = null
+        ?string $idempotencyKey = null,
+        bool $allowNegativeBalance = false
     ): array {
         // Enforce BCMath scale 4
         $requiredQuantity = number_format((float) $requiredQuantity, 4, '.', '');
@@ -62,7 +63,8 @@ class InventoryDeductionService
             $movementType,
             $witness,
             $reason,
-            $idempotencyKey
+            $idempotencyKey,
+            $allowNegativeBalance
         ): array {
             // Lock product row to prevent race conditions
             $lockedProduct = InventoryProduct::query()
@@ -72,7 +74,7 @@ class InventoryDeductionService
 
             $totalAvailable = $lockedProduct->calculateTotalStock();
 
-            if (bccomp($totalAvailable, $requiredQuantity, 4) < 0) {
+            if (bccomp($totalAvailable, $requiredQuantity, 4) < 0 && ! $allowNegativeBalance) {
                 throw ValidationException::withMessages([
                     'quantity' => [
                         "Insufficient stock for '{$lockedProduct->name}'. Available: {$totalAvailable} {$lockedProduct->base_unit->value}, Requested: {$requiredQuantity} {$lockedProduct->base_unit->value}.",
@@ -186,6 +188,30 @@ class InventoryDeductionService
                         'quantity' => '-'.$deductFromThis,
                         'balance_after' => $newBalance,
                         'reason' => $reason,
+                        'witnessed_by_user_id' => $witness?->id,
+                        'recorded_by_user_id' => $actor->id,
+                        'created_at' => now(),
+                    ]);
+                }
+            }
+
+            if ($allowNegativeBalance && bccomp($remainingToDeduct, '0.0000', 4) > 0) {
+                $lastContainer = $openContainers->last() ?? ($sealedContainers ?? collect())->last() ?? InventoryContainer::query()->where('product_id', $lockedProduct->id)->first();
+                if ($lastContainer instanceof InventoryContainer) {
+                    $newBalance = bcsub((string) $lastContainer->current_base_balance, $remainingToDeduct, 4);
+                    $lastContainer->current_base_balance = $newBalance;
+                    $lastContainer->status = ContainerStatus::Open;
+                    $lastContainer->save();
+
+                    $movements[] = InventoryMovementLedger::query()->create([
+                        'idempotency_key' => $idempotencyKey,
+                        'product_id' => $lockedProduct->id,
+                        'batch_id' => $lastContainer->batch_id,
+                        'container_id' => $lastContainer->id,
+                        'movement_type' => $movementType,
+                        'quantity' => '-'.$remainingToDeduct,
+                        'balance_after' => $newBalance,
+                        'reason' => ($reason ?? 'Clinical dose deduction').' (Offline reconciliation deficit)',
                         'witnessed_by_user_id' => $witness?->id,
                         'recorded_by_user_id' => $actor->id,
                         'created_at' => now(),

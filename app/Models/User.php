@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\StaffRole;
+use App\Services\Tenancy\TenantManager;
 use App\Services\Tenancy\TenantStaffSyncService;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,7 +15,9 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -123,7 +126,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Verify a 4-digit PIN for controlled substance witnessing.
+     * Verify a 4-digit PIN for controlled substance witnessing with brute-force lockout.
      */
     public function verifyPin(string $pin): bool
     {
@@ -131,6 +134,37 @@ class User extends Authenticatable
             return false;
         }
 
-        return Hash::check($pin, $this->pin);
+        $tenantManager = app(TenantManager::class);
+        $tenantId = $tenantManager->current()?->id ?? 'global';
+        $lockoutKey = "pin_lockout:{$tenantId}:{$this->id}";
+        $attemptsKey = "pin_attempts:{$tenantId}:{$this->id}";
+
+        if (Cache::has($lockoutKey)) {
+            throw ValidationException::withMessages([
+                'pin' => ['Witness PIN is temporarily locked due to too many failed attempts. Try again in 15 minutes.'],
+                'witness_pin' => ['Witness PIN is temporarily locked due to too many failed attempts. Try again in 15 minutes.'],
+            ]);
+        }
+
+        if (! Hash::check($pin, $this->pin)) {
+            $attempts = (int) Cache::get($attemptsKey, 0) + 1;
+            if ($attempts >= 5) {
+                Cache::put($lockoutKey, true, now()->addMinutes(15));
+                Cache::forget($attemptsKey);
+                throw ValidationException::withMessages([
+                    'pin' => ['Witness PIN is temporarily locked due to too many failed attempts. Try again in 15 minutes.'],
+                    'witness_pin' => ['Witness PIN is temporarily locked due to too many failed attempts. Try again in 15 minutes.'],
+                ]);
+            }
+
+            Cache::put($attemptsKey, $attempts, now()->addMinutes(15));
+
+            return false;
+        }
+
+        Cache::forget($attemptsKey);
+        Cache::forget($lockoutKey);
+
+        return true;
     }
 }

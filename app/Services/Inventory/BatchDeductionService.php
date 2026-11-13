@@ -34,7 +34,8 @@ class BatchDeductionService
         User $actor,
         StockMovementType $movementType = StockMovementType::DoseAdministration,
         ?string $reason = null,
-        ?string $idempotencyKey = null
+        ?string $idempotencyKey = null,
+        bool $allowNegativeBalance = false
     ): array {
         // Enforce BCMath scale 4
         $doseAmountBaseUnits = number_format((float) $doseAmountBaseUnits, 4, '.', '');
@@ -51,7 +52,8 @@ class BatchDeductionService
             $actor,
             $movementType,
             $reason,
-            $idempotencyKey
+            $idempotencyKey,
+            $allowNegativeBalance
         ): array {
             // Lock the product row for update to prevent concurrent race conditions
             $lockedProduct = InventoryProduct::query()
@@ -73,7 +75,7 @@ class BatchDeductionService
                 $totalAvailable = bcadd($totalAvailable, (string) $batch->current_base_balance, 4);
             }
 
-            if (bccomp($totalAvailable, $doseAmountBaseUnits, 4) < 0) {
+            if (bccomp($totalAvailable, $doseAmountBaseUnits, 4) < 0 && ! $allowNegativeBalance) {
                 throw ValidationException::withMessages([
                     'dose_amount_base_units' => [
                         "Insufficient stock for '{$lockedProduct->name}'. Available: {$totalAvailable} {$lockedProduct->base_unit->value}, Requested: {$doseAmountBaseUnits} {$lockedProduct->base_unit->value}.",
@@ -114,6 +116,42 @@ class BatchDeductionService
                     'quantity' => '-'.$deductFromThis,
                     'balance_after' => $newBalance,
                     'reason' => $reason ?? "Clinical dose deduction of {$deductFromThis} {$lockedProduct->base_unit->value}",
+                    'recorded_by_user_id' => $actor->id,
+                    'created_at' => now(),
+                ]);
+            }
+
+            if ($allowNegativeBalance && bccomp($remainingToDeduct, '0.0000', 4) > 0) {
+                $targetBatch = $batches->last() ?? InventoryBatch::query()->where('product_id', $lockedProduct->id)->latest('expiration_date')->first();
+                if (! $targetBatch instanceof InventoryBatch) {
+                    $targetBatch = InventoryBatch::query()->create([
+                        'id' => (string) \Illuminate\Support\Str::uuid(),
+                        'product_id' => $lockedProduct->id,
+                        'batch_number' => 'BATCH-RECONCILIATION-001',
+                        'expiration_date' => now()->addYear(),
+                        'initial_base_quantity' => '0.0000',
+                        'current_base_balance' => '0.0000',
+                    ]);
+                }
+
+                $batchBalance = (string) $targetBatch->current_base_balance;
+                $newBalance = bcsub($batchBalance, $remainingToDeduct, 4);
+                $targetBatch->current_base_balance = $newBalance;
+                $targetBatch->save();
+
+                if (! in_array($targetBatch, $batchesAffected, true)) {
+                    $batchesAffected[] = $targetBatch;
+                }
+
+                $movements[] = InventoryMovementLedger::query()->create([
+                    'idempotency_key' => $idempotencyKey,
+                    'product_id' => $lockedProduct->id,
+                    'batch_id' => $targetBatch->id,
+                    'container_id' => null,
+                    'movement_type' => $movementType,
+                    'quantity' => '-'.$remainingToDeduct,
+                    'balance_after' => $newBalance,
+                    'reason' => ($reason ?? "Clinical dose deduction of {$remainingToDeduct} {$lockedProduct->base_unit->value}").' (Offline reconciliation deficit)',
                     'recorded_by_user_id' => $actor->id,
                     'created_at' => now(),
                 ]);

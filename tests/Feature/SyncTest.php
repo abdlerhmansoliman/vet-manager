@@ -16,6 +16,7 @@ use App\Services\Tenancy\TenantManager;
 use Carbon\Carbon;
 use Database\Seeders\TenantSeeder;
 use Database\Seeders\TenantStaffSeeder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
@@ -33,6 +34,7 @@ class SyncTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Cache::flush();
 
         $this->seed(TenantSeeder::class);
         $this->seed(TenantStaffSeeder::class);
@@ -469,6 +471,219 @@ class SyncTest extends TestCase
             return count($event->results) === 2
                 && $event->results[0]['status'] === 'applied'
                 && $event->results[1]['status'] === 'failed';
+        });
+    }
+
+    public function test_push_rejects_mutation_on_signed_locked_visit(): void
+    {
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+
+        $client = Client::factory()->create();
+        $patient = Patient::factory()->create(['client_id' => $client->id]);
+        $case = ClinicalCase::factory()->create([
+            'patient_id' => $patient->id,
+            'primary_veterinarian_id' => $this->veterinarian->id,
+        ]);
+
+        $visitId = (string) Str::uuid();
+        DB::table('visits')->insert([
+            'id' => $visitId,
+            'case_id' => $case->id,
+            'title' => 'Signed Visit Encounter',
+            'visit_type' => 'outpatient',
+            'status' => 'completed',
+            'is_signed' => 1,
+            'signed_at' => now(),
+            'signed_by' => $this->veterinarian->name,
+            'visit_date' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $tenantManager->reset();
+
+        // Attempt to update the signed visit via offline sync push
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', [
+                'mutations' => [
+                    [
+                        'mutation_id' => 'mut-signed-visit-01',
+                        'entity_type' => 'visit',
+                        'entity_id' => $visitId,
+                        'action' => 'update',
+                        'payload' => [
+                            'title' => 'Tampered Title Attempt',
+                        ],
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(202);
+
+        Event::assertDispatched(SyncBatchCompletedEvent::class, function (SyncBatchCompletedEvent $event): bool {
+            return count($event->results) === 1
+                && $event->results[0]['status'] === 'rejected'
+                && str_contains($event->results[0]['message'], 'is signed and locked');
+        });
+    }
+
+    public function test_push_rejects_note_mutation_on_signed_locked_visit(): void
+    {
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+
+        $client = Client::factory()->create();
+        $patient = Patient::factory()->create(['client_id' => $client->id]);
+        $case = ClinicalCase::factory()->create([
+            'patient_id' => $patient->id,
+            'primary_veterinarian_id' => $this->veterinarian->id,
+        ]);
+
+        $visitId = (string) Str::uuid();
+        DB::table('visits')->insert([
+            'id' => $visitId,
+            'case_id' => $case->id,
+            'title' => 'Signed Visit Encounter',
+            'visit_type' => 'outpatient',
+            'status' => 'completed',
+            'is_signed' => 1,
+            'signed_at' => now(),
+            'signed_by' => $this->veterinarian->name,
+            'visit_date' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $tenantManager->reset();
+
+        $noteId = (string) Str::uuid();
+
+        // Attempt to add a note attached to this locked visit
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', [
+                'mutations' => [
+                    [
+                        'mutation_id' => 'mut-signed-note-01',
+                        'entity_type' => 'clinical_progress_note',
+                        'entity_id' => $noteId,
+                        'action' => 'create',
+                        'payload' => [
+                            'case_id' => $case->id,
+                            'visit_id' => $visitId,
+                            'subjective_notes' => 'Attempting post-lock edit',
+                        ],
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(202);
+
+        Event::assertDispatched(SyncBatchCompletedEvent::class, function (SyncBatchCompletedEvent $event): bool {
+            return count($event->results) === 1
+                && $event->results[0]['status'] === 'rejected'
+                && str_contains($event->results[0]['message'], 'is signed and locked');
+        });
+    }
+
+    public function test_push_ignores_mutation_older_than_server_record_under_lww(): void
+    {
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+
+        $client = Client::factory()->create([
+            'name' => 'Server Authoritative Name',
+            'updated_at' => Carbon::now()->subMinutes(5),
+        ]);
+
+        $tenantManager->reset();
+
+        // Mutation with older updated_at (15 mins ago)
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', [
+                'mutations' => [
+                    [
+                        'mutation_id' => 'mut-lww-01',
+                        'entity_type' => 'client',
+                        'entity_id' => $client->id,
+                        'action' => 'update',
+                        'payload' => [
+                            'name' => 'Stale Offline Name',
+                            'updated_at' => Carbon::now()->subMinutes(15)->toIso8601String(),
+                        ],
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(202);
+
+        Event::assertDispatched(SyncBatchCompletedEvent::class, function (SyncBatchCompletedEvent $event): bool {
+            return count($event->results) === 1
+                && $event->results[0]['status'] === 'ignored'
+                && str_contains($event->results[0]['message'], 'LWW');
+        });
+
+        // Ensure server record was NOT overwritten
+        $tenantManager->switch($this->tenant);
+        $this->assertEquals('Server Authoritative Name', DB::table('clients')->where('id', $client->id)->value('name'));
+        $tenantManager->reset();
+    }
+
+    public function test_push_deduplicates_mutation_with_persistent_idempotency_key(): void
+    {
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        $clientId = (string) Str::uuid();
+        $idempotencyKey = 'idem-unique-key-999';
+
+        $mutationPayload = [
+            'mutations' => [
+                [
+                    'mutation_id' => 'mut-idem-01',
+                    'idempotency_key' => $idempotencyKey,
+                    'entity_type' => 'client',
+                    'entity_id' => $clientId,
+                    'action' => 'create',
+                    'payload' => [
+                        'name' => 'Idempotent Client',
+                    ],
+                ],
+            ],
+        ];
+
+        // 1. First execution
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', $mutationPayload)
+            ->assertStatus(202);
+
+        Event::assertDispatched(SyncBatchCompletedEvent::class, function (SyncBatchCompletedEvent $event): bool {
+            return count($event->results) === 1
+                && $event->results[0]['status'] === 'applied'
+                && ! isset($event->results[0]['message']);
+        });
+
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        // 2. Replay with identical idempotency_key
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', $mutationPayload)
+            ->assertStatus(202);
+
+        Event::assertDispatched(SyncBatchCompletedEvent::class, function (SyncBatchCompletedEvent $event): bool {
+            return count($event->results) === 1
+                && $event->results[0]['status'] === 'applied'
+                && str_contains($event->results[0]['message'] ?? '', 'Idempotent replay');
         });
     }
 }

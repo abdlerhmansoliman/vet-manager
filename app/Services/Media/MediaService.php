@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class MediaService
 {
@@ -191,6 +192,20 @@ class MediaService
         ?string $mimeType = 'image/webp',
         ?string $imageId = null
     ): Image {
+        $path = parse_url($fileUrl, PHP_URL_PATH);
+        if ($path) {
+            $key = ltrim($path, '/');
+            $bucket = (string) config('filesystems.disks.s3.bucket', 'vet-media');
+            if (str_starts_with($key, $bucket.'/')) {
+                $key = substr($key, strlen($bucket) + 1);
+            }
+            if (! Storage::disk('s3')->exists($key)) {
+                throw ValidationException::withMessages([
+                    'file_url' => ['The uploaded media file does not exist in storage.'],
+                ]);
+            }
+        }
+
         $imageableType = $visitId ? 'visits' : 'cases';
         $imageableId = $visitId ?? (string) $case->getKey();
 

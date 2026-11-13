@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Middleware\EnsureValidTenantToken;
 use App\Http\Middleware\IdempotencyMiddleware;
 use App\Http\Middleware\IdentifyTenant;
+use App\Http\Middleware\SetLocaleMiddleware;
 use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -28,7 +29,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(fn (Request $request) => route('landlord.login'));
 
+        $middleware->append(SetLocaleMiddleware::class);
+
         $middleware->priority([
+            SetLocaleMiddleware::class,
             IdentifyTenant::class,
             SubstituteBindings::class,
             Authenticate::class,
@@ -40,6 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant' => IdentifyTenant::class,
             'tenant.token' => EnsureValidTenantToken::class,
             'idempotent' => IdempotencyMiddleware::class,
+            'locale' => SetLocaleMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -17,6 +17,8 @@ class AuthAndStaffTest extends TestCase
     {
         parent::setUp();
 
+        \Illuminate\Support\Facades\Cache::flush();
+
         $this->seed(TenantSeeder::class);
         $this->seed(TenantStaffSeeder::class);
     }
@@ -31,6 +33,25 @@ class AuthAndStaffTest extends TestCase
             ->assertJsonCount(2, 'data')
             ->assertJsonFragment(['slug' => 'alphavet'])
             ->assertJsonFragment(['slug' => 'equinecare']);
+    }
+
+    public function test_resolve_tenants_is_rate_limited_after_three_requests(): void
+    {
+        // 1st request
+        $this->postJson('/api/v1/auth/resolve-tenants', ['email' => 'sarah.connor@vetservices.com'])
+            ->assertStatus(200);
+
+        // 2nd request
+        $this->postJson('/api/v1/auth/resolve-tenants', ['email' => 'sarah.connor@vetservices.com'])
+            ->assertStatus(200);
+
+        // 3rd request
+        $this->postJson('/api/v1/auth/resolve-tenants', ['email' => 'sarah.connor@vetservices.com'])
+            ->assertStatus(200);
+
+        // 4th request exceeds throttle:3,1 -> 429 Too Many Requests
+        $this->postJson('/api/v1/auth/resolve-tenants', ['email' => 'sarah.connor@vetservices.com'])
+            ->assertStatus(429);
     }
 
     public function test_staff_can_login_to_tenant_and_receive_capabilities(): void
@@ -121,6 +142,40 @@ class AuthAndStaffTest extends TestCase
         $validPinResponse->assertStatus(200)
             ->assertJsonPath('data.verified', true)
             ->assertJsonPath('data.role', 'field_doctor');
+    }
+
+    public function test_witness_pin_locks_out_after_five_failed_attempts(): void
+    {
+        $loginResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->postJson('/api/v1/auth/login', [
+                'email' => 'john.miller@alphavet.com',
+                'password' => 'password123',
+            ]);
+
+        $token = $loginResponse->json('token');
+
+        // 5 consecutive invalid attempts
+        for ($i = 0; $i < 5; $i++) {
+            $res = $this->withHeader('X-Tenant-ID', 'alphavet')
+                ->withHeader('Authorization', "Bearer {$token}")
+                ->postJson('/api/v1/auth/verify-pin', [
+                    'witness_email' => 'sarah.connor@vetservices.com',
+                    'pin' => '9999',
+                ]);
+            $res->assertStatus(422)->assertJsonValidationErrors(['pin']);
+        }
+
+        // Even with the correct PIN (5678), the 6th attempt is locked out
+        $lockedResponse = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/auth/verify-pin', [
+                'witness_email' => 'sarah.connor@vetservices.com',
+                'pin' => '5678',
+            ]);
+
+        $lockedResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['pin']);
+        $this->assertStringContainsString('temporarily locked', $lockedResponse->json('errors.pin.0'));
     }
 
     public function test_suspended_tenant_immediately_blocks_requests_via_cache_invalidation(): void

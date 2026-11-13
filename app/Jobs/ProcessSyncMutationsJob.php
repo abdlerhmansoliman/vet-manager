@@ -4,11 +4,18 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Enums\StockMovementType;
 use App\Events\SyncBatchCompletedEvent;
+use App\Models\InventoryProduct;
+use App\Models\User;
+use App\Services\Inventory\BatchDeductionService;
 use App\Services\Tenancy\TenantManager;
+use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ProcessSyncMutationsJob implements ShouldQueue
@@ -32,185 +39,221 @@ class ProcessSyncMutationsJob implements ShouldQueue
      */
     public function handle(TenantManager $tenantManager): void
     {
-        if ($this->tenantId !== null && $this->tenantId !== '') {
-            $tenant = $tenantManager->resolve($this->tenantId);
-            if ($tenant !== null) {
-                $tenantManager->switch($tenant);
-            }
-        }
-
-        $allResults = [];
-        $chunks = array_chunk($this->mutations, 200);
-
-        foreach ($chunks as $chunk) {
-            // 1. Pre-fetch existing IDs for this chunk to prevent N+1 queries
-            $clientIds = [];
-            $patientIds = [];
-            $caseIds = [];
-            $vetIds = [];
-
-            foreach ($chunk as $mutation) {
-                $payload = $mutation['payload'] ?? [];
-                if (is_string($payload)) {
-                    $payload = json_decode($payload, true) ?? [];
-                }
-
-                $entityType = $mutation['entity_type'] ?? null;
-                $entityId = $mutation['entity_id'] ?? null;
-                $targetId = $payload['id'] ?? $entityId;
-
-                if (in_array($entityType, ['client', 'clients'], true)) {
-                    if ($targetId) {
-                        $clientIds[] = (string) $targetId;
-                    }
-                } elseif (in_array($entityType, ['patient', 'patients'], true)) {
-                    if ($targetId) {
-                        $patientIds[] = (string) $targetId;
-                    }
-                    if (! empty($payload['client_id'])) {
-                        $clientIds[] = (string) $payload['client_id'];
-                    }
-                } elseif (in_array($entityType, ['case', 'cases', 'clinical_case', 'clinical_cases'], true)) {
-                    if ($targetId) {
-                        $caseIds[] = (string) $targetId;
-                    }
-                    if (! empty($payload['patient_id'])) {
-                        $patientIds[] = (string) $payload['patient_id'];
-                    }
-                    $vet = $payload['primary_veterinarian_id'] ?? $payload['veterinarian_id'] ?? $payload['vet_id'] ?? null;
-                    if (! empty($vet)) {
-                        $vetIds[] = (string) $vet;
-                    }
-                } elseif (in_array($entityType, ['progress_note', 'progress_notes', 'clinical_progress_note', 'clinical_progress_notes'], true)) {
-                    $case = $payload['clinical_case_id'] ?? $payload['case_id'] ?? null;
-                    if (! empty($case)) {
-                        $caseIds[] = (string) $case;
-                    }
-                    $vet = $payload['vet_id'] ?? $payload['veterinarian_id'] ?? $payload['primary_veterinarian_id'] ?? null;
-                    if (! empty($vet)) {
-                        $vetIds[] = (string) $vet;
-                    }
-                } elseif (in_array($entityType, ['visit', 'visits'], true)) {
-                    $case = $payload['case_id'] ?? null;
-                    if (! empty($case)) {
-                        $caseIds[] = (string) $case;
-                    }
+        try {
+            if ($this->tenantId !== null && $this->tenantId !== '') {
+                $tenant = $tenantManager->resolve($this->tenantId);
+                if ($tenant !== null) {
+                    $tenantManager->switch($tenant);
                 }
             }
 
-            $filterIds = fn (array $ids): array => array_values(array_unique(array_filter($ids, fn ($id) => is_string($id) && $id !== '')));
+            $allResults = [];
+            $chunks = array_chunk($this->mutations, 200);
+            $tenantKey = $this->tenantId ?? 'global';
 
-            $clientIds = $filterIds($clientIds);
-            $patientIds = $filterIds($patientIds);
-            $caseIds = $filterIds($caseIds);
-            $vetIds = $filterIds($vetIds);
+            foreach ($chunks as $chunk) {
+                // 1. Pre-fetch existing IDs for this chunk to prevent N+1 queries
+                $clientIds = [];
+                $patientIds = [];
+                $caseIds = [];
+                $vetIds = [];
 
-            $existingClientIds = ! empty($clientIds)
-                ? array_fill_keys(DB::table('clients')->whereIn('id', $clientIds)->pluck('id')->all(), true)
-                : [];
-
-            $existingPatientIds = ! empty($patientIds)
-                ? array_fill_keys(DB::table('patients')->whereIn('id', $patientIds)->pluck('id')->all(), true)
-                : [];
-
-            $existingCaseIds = ! empty($caseIds)
-                ? array_fill_keys(DB::table('cases')->whereIn('id', $caseIds)->pluck('id')->all(), true)
-                : [];
-
-            $existingVetIds = ! empty($vetIds)
-                ? array_fill_keys(DB::table('users')->whereIn('id', $vetIds)->pluck('id')->all(), true)
-                : [];
-
-            $fallbackVetId = (string) DB::table('users')->value('id');
-            if ($fallbackVetId !== '') {
-                $existingVetIds[$fallbackVetId] = true;
-            }
-
-            // 2. Wrap the processing of each chunk in its own DB::transaction()
-            try {
-                $chunkResults = DB::transaction(function () use (
-                    $chunk,
-                    $fallbackVetId,
-                    &$existingClientIds,
-                    &$existingPatientIds,
-                    &$existingCaseIds,
-                    &$existingVetIds
-                ): array {
-                    $results = [];
-
-                    foreach ($chunk as $mutation) {
-                        $mutationId = $mutation['mutation_id'] ?? $mutation['id'] ?? null;
-                        $entityType = $mutation['entity_type'] ?? null;
-                        $entityId = $mutation['entity_id'] ?? null;
-                        $action = $mutation['action'] ?? 'create';
-                        $payload = $mutation['payload'] ?? [];
-                        if (is_string($payload)) {
-                            $payload = json_decode($payload, true) ?? [];
-                        }
-
-                        $targetId = $payload['id'] ?? $entityId;
-
-                        if (! is_string($targetId) || $targetId === '') {
-                            $results[] = [
-                                'mutation_id' => $mutationId,
-                                'entity_type' => $entityType,
-                                'entity_id' => $entityId,
-                                'status' => 'failed',
-                                'message' => 'Missing or invalid entity ID in mutation payload.',
-                            ];
-
-                            continue;
-                        }
-
-                        try {
-                            match ($entityType) {
-                                'client', 'clients' => $this->applyClientMutation($action, $targetId, $payload, $existingClientIds),
-                                'patient', 'patients' => $this->applyPatientMutation($action, $targetId, $payload, $existingClientIds, $existingPatientIds),
-                                'case', 'cases', 'clinical_case', 'clinical_cases' => $this->applyCaseMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
-                                'visit', 'visits' => $this->applyVisitMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds),
-                                'progress_note', 'progress_notes', 'clinical_progress_note', 'clinical_progress_notes' => $this->applyProgressNoteMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
-                                default => throw new \InvalidArgumentException("Unsupported entity type: {$entityType}"),
-                            };
-
-                            $results[] = [
-                                'mutation_id' => $mutationId,
-                                'entity_type' => $entityType,
-                                'entity_id' => $entityId,
-                                'status' => 'applied',
-                            ];
-                        } catch (\InvalidArgumentException $e) {
-                            $results[] = [
-                                'mutation_id' => $mutationId,
-                                'entity_type' => $entityType,
-                                'entity_id' => $entityId,
-                                'status' => 'ignored',
-                                'message' => $e->getMessage(),
-                            ];
-                        }
-                    }
-
-                    return $results;
-                });
-
-                foreach ($chunkResults as $res) {
-                    $allResults[] = $res;
-                }
-            } catch (\Throwable $e) {
-                // Rollback ONLY that chunk if it fails, and record failed status so the next chunk can proceed
                 foreach ($chunk as $mutation) {
-                    $allResults[] = [
-                        'mutation_id' => $mutation['mutation_id'] ?? $mutation['id'] ?? null,
-                        'entity_type' => $mutation['entity_type'] ?? null,
-                        'entity_id' => $mutation['entity_id'] ?? null,
-                        'status' => 'failed',
-                        'message' => $e->getMessage(),
-                    ];
+                    $payload = $mutation['payload'] ?? [];
+                    if (is_string($payload)) {
+                        $payload = json_decode($payload, true) ?? [];
+                    }
+
+                    $entityType = $mutation['entity_type'] ?? null;
+                    $entityId = $mutation['entity_id'] ?? null;
+                    $targetId = $payload['id'] ?? $entityId;
+
+                    if (in_array($entityType, ['client', 'clients'], true)) {
+                        if ($targetId) {
+                            $clientIds[] = (string) $targetId;
+                        }
+                    } elseif (in_array($entityType, ['patient', 'patients'], true)) {
+                        if ($targetId) {
+                            $patientIds[] = (string) $targetId;
+                        }
+                        if (! empty($payload['client_id'])) {
+                            $clientIds[] = (string) $payload['client_id'];
+                        }
+                    } elseif (in_array($entityType, ['case', 'cases', 'clinical_case', 'clinical_cases'], true)) {
+                        if ($targetId) {
+                            $caseIds[] = (string) $targetId;
+                        }
+                        if (! empty($payload['patient_id'])) {
+                            $patientIds[] = (string) $payload['patient_id'];
+                        }
+                        $vet = $payload['primary_veterinarian_id'] ?? $payload['veterinarian_id'] ?? $payload['vet_id'] ?? null;
+                        if (! empty($vet)) {
+                            $vetIds[] = (string) $vet;
+                        }
+                    } elseif (in_array($entityType, ['progress_note', 'progress_notes', 'clinical_progress_note', 'clinical_progress_notes'], true)) {
+                        $case = $payload['clinical_case_id'] ?? $payload['case_id'] ?? null;
+                        if (! empty($case)) {
+                            $caseIds[] = (string) $case;
+                        }
+                        $vet = $payload['vet_id'] ?? $payload['veterinarian_id'] ?? $payload['primary_veterinarian_id'] ?? null;
+                        if (! empty($vet)) {
+                            $vetIds[] = (string) $vet;
+                        }
+                    } elseif (in_array($entityType, ['visit', 'visits'], true)) {
+                        $case = $payload['case_id'] ?? null;
+                        if (! empty($case)) {
+                            $caseIds[] = (string) $case;
+                        }
+                    }
+                }
+
+                $filterIds = fn (array $ids): array => array_values(array_unique(array_filter($ids, fn ($id) => is_string($id) && $id !== '')));
+
+                $clientIds = $filterIds($clientIds);
+                $patientIds = $filterIds($patientIds);
+                $caseIds = $filterIds($caseIds);
+                $vetIds = $filterIds($vetIds);
+
+                $existingClientIds = ! empty($clientIds)
+                    ? array_fill_keys(DB::table('clients')->whereIn('id', $clientIds)->pluck('id')->all(), true)
+                    : [];
+
+                $existingPatientIds = ! empty($patientIds)
+                    ? array_fill_keys(DB::table('patients')->whereIn('id', $patientIds)->pluck('id')->all(), true)
+                    : [];
+
+                $existingCaseIds = ! empty($caseIds)
+                    ? array_fill_keys(DB::table('cases')->whereIn('id', $caseIds)->pluck('id')->all(), true)
+                    : [];
+
+                $existingVetIds = ! empty($vetIds)
+                    ? array_fill_keys(DB::table('users')->whereIn('id', $vetIds)->pluck('id')->all(), true)
+                    : [];
+
+                $fallbackVetId = (string) DB::table('users')->value('id');
+                if ($fallbackVetId !== '') {
+                    $existingVetIds[$fallbackVetId] = true;
+                }
+
+                // 2. Wrap the processing of each chunk in its own DB::transaction()
+                try {
+                    $chunkResults = DB::transaction(function () use (
+                        $chunk,
+                        $fallbackVetId,
+                        $tenantKey,
+                        &$existingClientIds,
+                        &$existingPatientIds,
+                        &$existingCaseIds,
+                        &$existingVetIds
+                    ): array {
+                        $results = [];
+
+                        foreach ($chunk as $mutation) {
+                            $mutationId = $mutation['mutation_id'] ?? $mutation['id'] ?? null;
+                            $entityType = $mutation['entity_type'] ?? null;
+                            $entityId = $mutation['entity_id'] ?? null;
+                            $action = $mutation['action'] ?? 'create';
+                            $payload = $mutation['payload'] ?? [];
+                            if (is_string($payload)) {
+                                $payload = json_decode($payload, true) ?? [];
+                            }
+
+                            $targetId = $payload['id'] ?? $entityId;
+
+                            if (! is_string($targetId) || $targetId === '') {
+                                $results[] = [
+                                    'mutation_id' => $mutationId,
+                                    'entity_type' => $entityType,
+                                    'entity_id' => $entityId,
+                                    'status' => 'failed',
+                                    'message' => 'Missing or invalid entity ID in mutation payload.',
+                                ];
+
+                                continue;
+                            }
+
+                            // Idempotency check: deduplicate mutations per tenant using idempotency_key
+                            $idempotencyKey = $mutation['idempotency_key'] ?? null;
+                            if ($idempotencyKey !== null && $idempotencyKey !== '') {
+                                $cacheKey = "sync:mutation:{$tenantKey}:{$idempotencyKey}";
+                                if (Cache::has($cacheKey)) {
+                                    $results[] = [
+                                        'mutation_id' => $mutationId,
+                                        'entity_type' => $entityType,
+                                        'entity_id' => $entityId,
+                                        'status' => 'applied',
+                                        'message' => 'Idempotent replay: mutation already applied.',
+                                    ];
+
+                                    continue;
+                                }
+                            }
+
+                            try {
+                                match ($entityType) {
+                                    'client', 'clients' => $this->applyClientMutation($action, $targetId, $payload, $existingClientIds),
+                                    'patient', 'patients' => $this->applyPatientMutation($action, $targetId, $payload, $existingClientIds, $existingPatientIds),
+                                    'case', 'cases', 'clinical_case', 'clinical_cases' => $this->applyCaseMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
+                                    'visit', 'visits' => $this->applyVisitMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds),
+                                    'progress_note', 'progress_notes', 'clinical_progress_note', 'clinical_progress_notes' => $this->applyProgressNoteMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
+                                    'dose', 'doses', 'dose_administration', 'dose_administrations' => $this->applyDoseMutation($action, $targetId, $payload, $fallbackVetId),
+                                    default => throw new \InvalidArgumentException("Unsupported entity type: {$entityType}"),
+                                };
+
+                                if ($idempotencyKey !== null && $idempotencyKey !== '') {
+                                    Cache::put("sync:mutation:{$tenantKey}:{$idempotencyKey}", true, now()->addDays(7));
+                                }
+
+                                $results[] = [
+                                    'mutation_id' => $mutationId,
+                                    'entity_type' => $entityType,
+                                    'entity_id' => $entityId,
+                                    'status' => 'applied',
+                                ];
+                            } catch (\DomainException $e) {
+                                $results[] = [
+                                    'mutation_id' => $mutationId,
+                                    'entity_type' => $entityType,
+                                    'entity_id' => $entityId,
+                                    'status' => 'rejected',
+                                    'message' => $e->getMessage(),
+                                ];
+                            } catch (\InvalidArgumentException $e) {
+                                $results[] = [
+                                    'mutation_id' => $mutationId,
+                                    'entity_type' => $entityType,
+                                    'entity_id' => $entityId,
+                                    'status' => 'ignored',
+                                    'message' => $e->getMessage(),
+                                ];
+                            }
+                        }
+
+                        return $results;
+                    });
+
+                    foreach ($chunkResults as $res) {
+                        $allResults[] = $res;
+                    }
+                } catch (\Throwable $e) {
+                    // Rollback ONLY that chunk if it fails, and record failed status so the next chunk can proceed
+                    foreach ($chunk as $mutation) {
+                        $allResults[] = [
+                            'mutation_id' => $mutation['mutation_id'] ?? $mutation['id'] ?? null,
+                            'entity_type' => $mutation['entity_type'] ?? null,
+                            'entity_id' => $mutation['entity_id'] ?? null,
+                            'status' => 'failed',
+                            'message' => $e->getMessage(),
+                        ];
+                    }
                 }
             }
-        }
 
-        // 3. Fire broadcast event passing the batch ID and final results array
-        SyncBatchCompletedEvent::dispatch($this->batchId, $allResults);
+            // 3. Fire broadcast event passing the batch ID and final results array
+            SyncBatchCompletedEvent::dispatch($this->batchId, $allResults);
+        } finally {
+            $tenantManager->reset();
+        }
     }
 
     /**
@@ -220,6 +263,13 @@ class ProcessSyncMutationsJob implements ShouldQueue
      */
     private function applyClientMutation(string $action, string $clientId, array $payload, array &$existingClientIds): void
     {
+        $existing = DB::table('clients')->where('id', $clientId)->first();
+
+        $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
+        if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
+            throw new \InvalidArgumentException("Server client record is newer than incoming mutation. Mutation ignored under LWW.");
+        }
+
         if ($action === 'delete') {
             DB::table('clients')->where('id', $clientId)->update([
                 'deleted_at' => now(),
@@ -273,6 +323,13 @@ class ProcessSyncMutationsJob implements ShouldQueue
         array &$existingClientIds,
         array &$existingPatientIds
     ): void {
+        $existing = DB::table('patients')->where('id', $patientId)->first();
+
+        $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
+        if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
+            throw new \InvalidArgumentException("Server patient record is newer than incoming mutation. Mutation ignored under LWW.");
+        }
+
         if ($action === 'delete') {
             DB::table('patients')->where('id', $patientId)->update([
                 'deleted_at' => now(),
@@ -402,6 +459,13 @@ class ProcessSyncMutationsJob implements ShouldQueue
         array &$existingCaseIds,
         array &$existingVetIds
     ): void {
+        $existing = DB::table('cases')->where('id', $caseId)->first();
+
+        $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
+        if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
+            throw new \InvalidArgumentException("Server case record is newer than incoming mutation. Mutation ignored under LWW.");
+        }
+
         if ($action === 'delete') {
             DB::table('cases')->where('id', $caseId)->update([
                 'deleted_at' => now(),
@@ -550,6 +614,24 @@ class ProcessSyncMutationsJob implements ShouldQueue
         array &$existingCaseIds,
         array &$existingVetIds
     ): void {
+        $visitId = $payload['visit_id'] ?? null;
+        if ($visitId && Schema::connection('tenant')->hasTable('visits')) {
+            $visit = DB::table('visits')->where('id', $visitId)->first();
+            if ($visit && ! empty($visit->is_signed)) {
+                throw new \DomainException("Associated visit {$visitId} is signed and locked (is_signed=true). Progress note modifications are strictly rejected.");
+            }
+        }
+
+        $existingNote = DB::table('clinical_progress_notes')->where('id', $noteId)->first();
+        if ($existingNote && ! empty($existingNote->is_signed)) {
+            throw new \DomainException("Progress note {$noteId} is signed and locked (is_signed=true). Modifications are strictly rejected.");
+        }
+
+        $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
+        if ($existingNote && $incomingUpdatedAt && Carbon::parse($existingNote->updated_at)->isAfter($incomingUpdatedAt)) {
+            throw new \InvalidArgumentException("Server progress note record is newer than incoming mutation. Mutation ignored under LWW.");
+        }
+
         if ($action === 'delete') {
             DB::table('clinical_progress_notes')->where('id', $noteId)->delete();
 
@@ -633,46 +715,55 @@ class ProcessSyncMutationsJob implements ShouldQueue
         $assessment = is_array($payload['assessment_notes'] ?? null) ? json_encode($payload['assessment_notes']) : ($payload['assessment_notes'] ?? null);
         $plan = is_array($payload['plan_notes'] ?? null) ? json_encode($payload['plan_notes']) : ($payload['plan_notes'] ?? null);
 
+        $insertData = [
+            'id' => $noteId,
+            'clinical_case_id' => $caseId,
+            'vet_id' => $vetId,
+            'temperature_c' => $payload['temperature_c'] ?? null,
+            'heart_rate_bpm' => isset($payload['heart_rate_bpm']) ? (int) $payload['heart_rate_bpm'] : null,
+            'respiratory_rate' => isset($payload['respiratory_rate']) ? (int) $payload['respiratory_rate'] : null,
+            'systolic_bp' => isset($payload['systolic_bp']) ? (int) $payload['systolic_bp'] : null,
+            'diastolic_bp' => isset($payload['diastolic_bp']) ? (int) $payload['diastolic_bp'] : null,
+            'mucous_membrane' => $payload['mucous_membrane'] ?? null,
+            'weight_kg' => isset($payload['weight_kg']) ? (float) $payload['weight_kg'] : null,
+            'subjective_notes' => $subjective,
+            'objective_notes' => $objective,
+            'assessment_notes' => $assessment,
+            'plan_notes' => $plan,
+            'is_signed' => $isSigned ? 1 : 0,
+            'signed_at' => $signedAt,
+            'created_at' => $payload['created_at'] ?? $now,
+            'updated_at' => $payload['updated_at'] ?? $now,
+        ];
+
+        $updateColumns = [
+            'clinical_case_id',
+            'vet_id',
+            'temperature_c',
+            'heart_rate_bpm',
+            'respiratory_rate',
+            'systolic_bp',
+            'diastolic_bp',
+            'mucous_membrane',
+            'weight_kg',
+            'subjective_notes',
+            'objective_notes',
+            'assessment_notes',
+            'plan_notes',
+            'is_signed',
+            'signed_at',
+            'updated_at',
+        ];
+
+        if (Schema::connection('tenant')->hasColumn('clinical_progress_notes', 'visit_id')) {
+            $insertData['visit_id'] = $visitId;
+            $updateColumns[] = 'visit_id';
+        }
+
         DB::table('clinical_progress_notes')->upsert(
-            [
-                'id' => $noteId,
-                'clinical_case_id' => $caseId,
-                'vet_id' => $vetId,
-                'temperature_c' => $payload['temperature_c'] ?? null,
-                'heart_rate_bpm' => isset($payload['heart_rate_bpm']) ? (int) $payload['heart_rate_bpm'] : null,
-                'respiratory_rate' => isset($payload['respiratory_rate']) ? (int) $payload['respiratory_rate'] : null,
-                'systolic_bp' => isset($payload['systolic_bp']) ? (int) $payload['systolic_bp'] : null,
-                'diastolic_bp' => isset($payload['diastolic_bp']) ? (int) $payload['diastolic_bp'] : null,
-                'mucous_membrane' => $payload['mucous_membrane'] ?? null,
-                'weight_kg' => isset($payload['weight_kg']) ? (float) $payload['weight_kg'] : null,
-                'subjective_notes' => $subjective,
-                'objective_notes' => $objective,
-                'assessment_notes' => $assessment,
-                'plan_notes' => $plan,
-                'is_signed' => $isSigned ? 1 : 0,
-                'signed_at' => $signedAt,
-                'created_at' => $payload['created_at'] ?? $now,
-                'updated_at' => $payload['updated_at'] ?? $now,
-            ],
+            $insertData,
             ['id'],
-            [
-                'clinical_case_id',
-                'vet_id',
-                'temperature_c',
-                'heart_rate_bpm',
-                'respiratory_rate',
-                'systolic_bp',
-                'diastolic_bp',
-                'mucous_membrane',
-                'weight_kg',
-                'subjective_notes',
-                'objective_notes',
-                'assessment_notes',
-                'plan_notes',
-                'is_signed',
-                'signed_at',
-                'updated_at',
-            ]
+            $updateColumns
         );
 
         // Synchronize patient weight if provided
@@ -704,12 +795,29 @@ class ProcessSyncMutationsJob implements ShouldQueue
         array &$existingPatientIds,
         array &$existingCaseIds
     ): void {
-        if (! DB::getSchemaBuilder()->hasTable('visits')) {
+        if (! Schema::connection('tenant')->hasTable('visits')) {
             return;
         }
 
+        $existingVisit = DB::table('visits')->where('id', $visitId)->first();
+        if ($existingVisit && ! empty($existingVisit->is_signed)) {
+            throw new \DomainException("Clinical visit {$visitId} is signed and locked (is_signed=true). Modifications and deletions are strictly rejected.");
+        }
+
+        $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
+        if ($existingVisit && $incomingUpdatedAt && Carbon::parse($existingVisit->updated_at)->isAfter($incomingUpdatedAt)) {
+            throw new \InvalidArgumentException("Server visit record is newer than incoming mutation. Mutation ignored under LWW.");
+        }
+
         if ($action === 'delete') {
-            DB::table('visits')->where('id', $visitId)->delete();
+            if (Schema::connection('tenant')->hasColumn('visits', 'deleted_at')) {
+                DB::table('visits')->where('id', $visitId)->update([
+                    'deleted_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } else {
+                DB::table('visits')->where('id', $visitId)->delete();
+            }
 
             return;
         }
@@ -809,5 +917,83 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 'updated_at',
             ]
         );
+    }
+
+    /**
+     * Ingest dose administration mutation via atomic insert and batch deduction.
+     */
+    private function applyDoseMutation(string $action, string $doseId, array $payload, string $fallbackVetId): void
+    {
+        if (! Schema::connection('tenant')->hasTable('dose_administrations')) {
+            return;
+        }
+
+        $existing = DB::table('dose_administrations')->where('id', $doseId)->first();
+
+        $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
+        if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
+            throw new \InvalidArgumentException("Server dose record is newer than incoming mutation. Mutation ignored under LWW.");
+        }
+
+        if ($action === 'delete') {
+            DB::table('dose_administrations')->where('id', $doseId)->delete();
+
+            return;
+        }
+
+        $now = now();
+        $caseId = $payload['case_id'] ?? null;
+        $patientId = $payload['patient_id'] ?? null;
+        if (! $patientId && $caseId) {
+            $patientId = DB::table('cases')->where('id', $caseId)->value('patient_id');
+        }
+        $productId = $payload['product_id'] ?? null;
+        $administeredBy = $payload['administered_by_user_id'] ?? $payload['vet_id'] ?? $fallbackVetId;
+        $doseAmount = (string) ($payload['dose_amount_base_units'] ?? $payload['dose_amount'] ?? '1');
+        $route = $payload['route_administered'] ?? null;
+        $notes = $payload['clinical_notes'] ?? null;
+
+        if ($existing) {
+            // Record already exists; update metadata without re-deducting inventory
+            DB::table('dose_administrations')->where('id', $doseId)->update([
+                'route_administered' => $route,
+                'clinical_notes' => $notes,
+                'updated_at' => $payload['updated_at'] ?? $now,
+            ]);
+
+            return;
+        }
+
+        DB::table('dose_administrations')->insert([
+            'id' => $doseId,
+            'case_id' => $caseId,
+            'patient_id' => $patientId,
+            'product_id' => $productId,
+            'administered_by_user_id' => $administeredBy,
+            'dose_amount_base_units' => $doseAmount,
+            'route_administered' => $route,
+            'clinical_notes' => $notes,
+            'created_at' => $payload['created_at'] ?? $now,
+            'updated_at' => $payload['updated_at'] ?? $now,
+        ]);
+
+        // If product exists, perform batch deduction with allowNegativeBalance: true
+        if ($productId) {
+            $product = InventoryProduct::find($productId);
+            $user = User::find($administeredBy) ?? User::find($fallbackVetId);
+            if ($product && $user) {
+                $deductionService = app(BatchDeductionService::class);
+                $reason = "Offline sync dose administration {$doseId}";
+                $deductionService->deduct(
+                    product: $product,
+                    doseAmountBaseUnits: $doseAmount,
+                    actor: $user,
+                    movementType: StockMovementType::DoseAdministration,
+                    reason: $reason,
+                    idempotencyKey: "sync:dose:{$doseId}",
+                    allowNegativeBalance: true
+                );
+            }
+        }
     }
 }

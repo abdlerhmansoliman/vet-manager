@@ -192,7 +192,11 @@ class MediaUploadTest extends TestCase
     public function test_can_confirm_direct_upload_and_persist_image_metadata(): void
     {
         $offlineVisitId = (string) Str::uuid();
-        $fileUrl = 'http://10.0.3.2:9000/vet-media/media/alphavet/cases/'.$this->case->id.'/visits/'.$offlineVisitId.'/xray.webp';
+        $s3Key = 'media/alphavet/cases/'.$this->case->id.'/visits/'.$offlineVisitId.'/xray.webp';
+        $fileUrl = 'http://10.0.3.2:9000/vet-media/'.$s3Key;
+
+        // Populate object in S3 so verification passes
+        Storage::disk('s3')->put($s3Key, 'fake webp content');
 
         $response = $this->withHeader('X-Tenant-ID', 'alphavet')
             ->withHeader('Authorization', 'Bearer '.$this->token)
@@ -223,5 +227,22 @@ class MediaUploadTest extends TestCase
         ]);
 
         $tenantManager->reset();
+    }
+
+    public function test_confirm_direct_upload_fails_when_file_does_not_exist_in_s3(): void
+    {
+        $offlineVisitId = (string) Str::uuid();
+        $fileUrl = 'http://10.0.3.2:9000/vet-media/media/alphavet/cases/'.$this->case->id.'/visits/'.$offlineVisitId.'/missing.webp';
+
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', 'Bearer '.$this->token)
+            ->postJson("/api/v1/cases/{$this->case->id}/media/confirm", [
+                'file_url' => $fileUrl,
+                'visit_id' => $offlineVisitId,
+                'title' => 'Missing Radiograph',
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['file_url']);
     }
 }
