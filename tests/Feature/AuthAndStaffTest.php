@@ -9,6 +9,7 @@ use App\Enums\TenantStatus;
 use App\Models\Tenant;
 use Database\Seeders\TenantSeeder;
 use Database\Seeders\TenantStaffSeeder;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class AuthAndStaffTest extends TestCase
@@ -17,7 +18,7 @@ class AuthAndStaffTest extends TestCase
     {
         parent::setUp();
 
-        \Illuminate\Support\Facades\Cache::flush();
+        Cache::flush();
 
         $this->seed(TenantSeeder::class);
         $this->seed(TenantStaffSeeder::class);

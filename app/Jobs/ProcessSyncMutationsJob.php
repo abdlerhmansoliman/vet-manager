@@ -271,7 +271,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
         if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
-            throw new \InvalidArgumentException("Server species record is newer than incoming mutation. Mutation ignored under LWW.");
+            throw new \InvalidArgumentException('Server species record is newer than incoming mutation. Mutation ignored under LWW.');
         }
 
         if ($action === 'delete') {
@@ -317,7 +317,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
         if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
-            throw new \InvalidArgumentException("Server client record is newer than incoming mutation. Mutation ignored under LWW.");
+            throw new \InvalidArgumentException('Server client record is newer than incoming mutation. Mutation ignored under LWW.');
         }
 
         if ($action === 'delete') {
@@ -377,7 +377,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
         if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
-            throw new \InvalidArgumentException("Server patient record is newer than incoming mutation. Mutation ignored under LWW.");
+            throw new \InvalidArgumentException('Server patient record is newer than incoming mutation. Mutation ignored under LWW.');
         }
 
         if ($action === 'delete') {
@@ -513,7 +513,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
         if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
-            throw new \InvalidArgumentException("Server case record is newer than incoming mutation. Mutation ignored under LWW.");
+            throw new \InvalidArgumentException('Server case record is newer than incoming mutation. Mutation ignored under LWW.');
         }
 
         if ($action === 'delete') {
@@ -679,7 +679,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
         if ($existingNote && $incomingUpdatedAt && Carbon::parse($existingNote->updated_at)->isAfter($incomingUpdatedAt)) {
-            throw new \InvalidArgumentException("Server progress note record is newer than incoming mutation. Mutation ignored under LWW.");
+            throw new \InvalidArgumentException('Server progress note record is newer than incoming mutation. Mutation ignored under LWW.');
         }
 
         if ($action === 'delete') {
@@ -856,7 +856,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
         if ($existingVisit && $incomingUpdatedAt && Carbon::parse($existingVisit->updated_at)->isAfter($incomingUpdatedAt)) {
-            throw new \InvalidArgumentException("Server visit record is newer than incoming mutation. Mutation ignored under LWW.");
+            throw new \InvalidArgumentException('Server visit record is newer than incoming mutation. Mutation ignored under LWW.');
         }
 
         if ($action === 'delete') {
@@ -982,7 +982,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
         if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
-            throw new \InvalidArgumentException("Server dose record is newer than incoming mutation. Mutation ignored under LWW.");
+            throw new \InvalidArgumentException('Server dose record is newer than incoming mutation. Mutation ignored under LWW.');
         }
 
         if ($action === 'delete') {
@@ -1046,5 +1046,4 @@ class ProcessSyncMutationsJob implements ShouldQueue
             }
         }
     }
-
 }

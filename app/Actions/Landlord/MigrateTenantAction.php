@@ -16,15 +16,17 @@ class MigrateTenantAction
 
     public function execute(Tenant $tenant): void
     {
-        $this->tenantManager->createDatabase($tenant);
-        $this->tenantManager->switch($tenant);
+        try {
+            $this->tenantManager->createDatabase($tenant);
+            $this->tenantManager->switch($tenant);
 
-        Artisan::call('migrate', [
-            '--database' => 'tenant',
-            '--path' => 'database/migrations/tenant',
-            '--force' => true,
-        ]);
-
-        $this->tenantManager->reset();
+            Artisan::call('migrate', [
+                '--database' => 'tenant',
+                '--path' => 'database/migrations/tenant',
+                '--force' => true,
+            ]);
+        } finally {
+            $this->tenantManager->reset();
+        }
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Jobs\ProcessSyncMutationsJob;
 use App\Models\Species;
 use App\Models\Tenant;
 use App\Models\User;
