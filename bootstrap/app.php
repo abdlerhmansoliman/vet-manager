@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Middleware\EnsureValidTenantToken;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\IdempotencyMiddleware;
 use App\Http\Middleware\IdentifyTenant;
 use App\Http\Middleware\SetLocaleMiddleware;
@@ -41,7 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             SetLocaleMiddleware::class,
-            \App\Http\Middleware\HandleInertiaRequests::class,
+            HandleInertiaRequests::class,
         ]);
 
         $middleware->api(append: [

@@ -44,7 +44,16 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => function () use ($request) {
-                    $user = $request->user('web');
+                    if (! app(TenantManager::class)->isResolved()) {
+                        return null;
+                    }
+
+                    try {
+                        $user = $request->user('web');
+                    } catch (\Throwable) {
+                        return null;
+                    }
+
                     if (! $user) {
                         return null;
                     }
@@ -73,7 +82,16 @@ class HandleInertiaRequests extends Middleware
                 ];
             },
             'userClinics' => function () use ($request) {
-                $user = $request->user('web');
+                if (! app(TenantManager::class)->isResolved()) {
+                    return [];
+                }
+
+                try {
+                    $user = $request->user('web');
+                } catch (\Throwable) {
+                    return [];
+                }
+
                 if (! $user) {
                     return [];
                 }

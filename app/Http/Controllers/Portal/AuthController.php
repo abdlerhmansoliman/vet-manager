@@ -27,8 +27,16 @@ class AuthController extends Controller
      */
     public function create(): Response|RedirectResponse
     {
-        if (Auth::guard('web')->check() && session()->has('active_tenant_id')) {
-            return redirect()->route('portal.dashboard');
+        if (session()->has('active_tenant_id')) {
+            $tenant = $this->tenantManager->resolve((string) session('active_tenant_id'));
+            if ($tenant instanceof Tenant && $tenant->isActive() && ! $tenant->isSuspended()) {
+                $this->tenantManager->switch($tenant);
+                if (Auth::guard('web')->check()) {
+                    return redirect()->route('portal.dashboard');
+                }
+            } else {
+                session()->forget('active_tenant_id');
+            }
         }
 
         return Inertia::render('Auth/Login', [
