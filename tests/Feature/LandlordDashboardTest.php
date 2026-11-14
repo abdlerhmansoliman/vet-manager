@@ -71,6 +71,40 @@ class LandlordDashboardTest extends TestCase
         $this->assertAuthenticatedAs($this->admin, 'landlord');
     }
 
+    public function test_landlord_login_redirects_to_central_even_if_intended_url_points_to_portal(): void
+    {
+        $response = $this->withSession([
+            'url.intended' => 'http://localhost/portal',
+        ])->post('/central/login', [
+            'email' => 'admin@vetmanager.io',
+            'password' => 'Password123!',
+        ]);
+
+        $response->assertRedirect(route('landlord.dashboard'));
+        $this->assertAuthenticatedAs($this->admin, 'landlord');
+    }
+
+    public function test_landlord_login_preserves_intended_central_destination(): void
+    {
+        $response = $this->withSession([
+            'url.intended' => 'http://localhost/central/tenants/create',
+        ])->post('/central/login', [
+            'email' => 'admin@vetmanager.io',
+            'password' => 'Password123!',
+        ]);
+
+        $response->assertRedirect('http://localhost/central/tenants/create');
+        $this->assertAuthenticatedAs($this->admin, 'landlord');
+    }
+
+    public function test_authenticated_landlord_visiting_root_or_login_redirects_to_central_dashboard(): void
+    {
+        $this->actingAs($this->admin, 'landlord');
+
+        $this->get('/')->assertRedirect(route('landlord.dashboard'));
+        $this->get('/login')->assertRedirect(route('landlord.dashboard'));
+    }
+
     public function test_landlord_login_fails_with_invalid_credentials(): void
     {
         $response = $this->from('/central/login')->post('/central/login', [

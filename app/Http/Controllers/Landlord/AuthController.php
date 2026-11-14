@@ -35,7 +35,15 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('landlord.dashboard'))->with(
+        $intended = $request->session()->pull('url.intended');
+        if ($intended !== null && str_contains($intended, '/central') && ! str_contains($intended, '/central/login')) {
+            return redirect()->to($intended)->with(
+                'success',
+                'Welcome back to the Central Platform Console.'
+            );
+        }
+
+        return redirect()->route('landlord.dashboard')->with(
             'success',
             'Welcome back to the Central Platform Console.'
         );
