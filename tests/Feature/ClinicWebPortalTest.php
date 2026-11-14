@@ -20,9 +20,10 @@ use App\Models\Visit;
 use App\Services\Tenancy\TenantManager;
 use Database\Seeders\TenantSeeder;
 use Database\Seeders\TenantStaffSeeder;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -464,5 +465,33 @@ class ClinicWebPortalTest extends TestCase
             ->where('locale', 'ar')
             ->where('dir', 'rtl')
         );
+    }
+
+    public function test_login_page_renders_cleanly_even_with_stale_session_and_unselected_tenant(): void
+    {
+        // Simulate no active tenant selected and tenant DB connection database is unselected/null
+        config(['database.connections.tenant.database' => null]);
+        DB::purge('tenant');
+
+        $guardName = 'login_web_'.sha1(SessionGuard::class);
+        $response = $this->withSession([
+            $guardName => '01a1a287-fc27-7248-80d2-4061c7474c71',
+        ])->get('/portal/login');
+
+        $response->assertStatus(200);
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Auth/Login')
+            ->where('step', 'discover_email')
+        );
+    }
+
+    public function test_authenticated_practitioner_visiting_login_redirects_to_dashboard(): void
+    {
+        $response = $this->withSession([
+            'active_tenant_id' => $this->alphaTenant->id,
+        ])->actingAs($this->doctor, 'web')
+            ->get('/portal/login');
+
+        $response->assertRedirect(route('portal.dashboard'));
     }
 }

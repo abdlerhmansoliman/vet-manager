@@ -11,7 +11,6 @@ use App\Http\Controllers\Controller;
 use App\Models\ClinicalCase;
 use App\Models\InventoryProduct;
 use App\Models\Patient;
-use App\Models\Visit;
 use App\Services\Tenancy\TenantManager;
 use Illuminate\Http\Request;
 use Inertia\Inertia;

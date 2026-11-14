@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Route;
 */
 
 // Public Ingress & Two-Step Authentication
-Route::middleware('guest:web')->group(function (): void {
+Route::group([], function (): void {
     Route::get('/login', [AuthController::class, 'create'])->name('portal.login');
     Route::post('/login', [AuthController::class, 'authenticate']);
     Route::post('/login/discover', [AuthController::class, 'discover'])->name('portal.login.discover');
