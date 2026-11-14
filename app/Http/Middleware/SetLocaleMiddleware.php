@@ -49,10 +49,23 @@ class SetLocaleMiddleware
         // 1. Explicit query parameter override
         $explicit = $request->query('lang') ?? $request->query('locale');
         if (is_string($explicit) && in_array(strtolower($explicit), self::SUPPORTED_LOCALES, true)) {
-            return strtolower($explicit);
+            $lang = strtolower($explicit);
+            if ($request->hasSession()) {
+                $request->session()->put('locale', $lang);
+            }
+
+            return $lang;
         }
 
-        // 2. Accept-Language header
+        // 2. Session locale preference
+        if ($request->hasSession() && $request->session()->has('locale')) {
+            $sessionLocale = (string) $request->session()->get('locale');
+            if (in_array($sessionLocale, self::SUPPORTED_LOCALES, true)) {
+                return $sessionLocale;
+            }
+        }
+
+        // 3. Accept-Language header
         $header = $request->header('Accept-Language');
         if ($header !== null && $header !== '') {
             $parsed = $this->parseAcceptLanguage($header);

@@ -24,6 +24,8 @@ class Patient extends Model
 
     protected $table = 'patients';
 
+    protected $appends = ['high_risk_allergies'];
+
     /**
      * @var list<string>
      */
@@ -116,5 +118,25 @@ class Patient extends Model
     public function isDeceased(): bool
     {
         return $this->status === PatientStatus::Deceased;
+    }
+
+    public function getHighRiskAllergiesAttribute(): ?string
+    {
+        if (is_array($this->allergies)) {
+            return implode(', ', $this->allergies);
+        }
+
+        return is_string($this->allergies) ? $this->allergies : null;
+    }
+
+    public function setHighRiskAllergiesAttribute(mixed $value): void
+    {
+        if (is_string($value) && trim($value) !== '') {
+            $this->attributes['allergies'] = json_encode(array_values(array_filter(array_map('trim', explode(',', $value)))));
+        } elseif (is_array($value)) {
+            $this->attributes['allergies'] = json_encode(array_values(array_filter($value)));
+        } else {
+            $this->attributes['allergies'] = null;
+        }
     }
 }

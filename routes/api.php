@@ -32,7 +32,7 @@ use Illuminate\Support\Facades\Route;
 
 // Public Landlord Routes (Central Discovery)
 Route::prefix('v1')->group(function (): void {
-    Route::post('/auth/resolve-tenants', ResolveTenantsController::class)->middleware('throttle:3,1');
+    Route::match(['GET', 'POST'], '/auth/resolve-tenants', ResolveTenantsController::class)->middleware('throttle:3,1');
 });
 
 // Tenant-Scoped Routes

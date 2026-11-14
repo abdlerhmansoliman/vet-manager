@@ -23,13 +23,30 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware('web')
                 ->prefix('central')
                 ->group(base_path('routes/central.php'));
+
+            Route::middleware('web')
+                ->prefix('portal')
+                ->group(base_path('routes/portal.php'));
         },
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->redirectGuestsTo(fn (Request $request) => route('landlord.login'));
+        $middleware->redirectGuestsTo(function (Request $request): string {
+            if ($request->is('portal*')) {
+                return route('portal.login');
+            }
 
-        $middleware->append(SetLocaleMiddleware::class);
+            return route('landlord.login');
+        });
+
+        $middleware->web(append: [
+            SetLocaleMiddleware::class,
+            \App\Http\Middleware\HandleInertiaRequests::class,
+        ]);
+
+        $middleware->api(append: [
+            SetLocaleMiddleware::class,
+        ]);
 
         $middleware->priority([
             SetLocaleMiddleware::class,

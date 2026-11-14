@@ -63,4 +63,24 @@ class ClinicalProgressNote extends Model
     {
         return $this->morphOne(Image::class, 'imageable')->latestOfMany();
     }
+
+    public function getSubjectiveAttribute(): ?string
+    {
+        return $this->subjective_notes;
+    }
+
+    public function getObjectiveAttribute(): ?string
+    {
+        return $this->objective_notes;
+    }
+
+    public function getAssessmentAttribute(): ?string
+    {
+        return $this->assessment_notes;
+    }
+
+    public function getPlanAttribute(): ?string
+    {
+        return $this->plan_notes;
+    }
 }

@@ -20,6 +20,8 @@ class Client extends Model
 
     protected $table = 'clients';
 
+    protected $appends = ['phone', 'address'];
+
     /**
      * @var list<string>
      */
@@ -52,5 +54,15 @@ class Client extends Model
     public function activePatients(): HasMany
     {
         return $this->hasMany(Patient::class, 'client_id')->where('status', PatientStatus::Active);
+    }
+
+    public function getPhoneAttribute(): ?string
+    {
+        return $this->phone_primary;
+    }
+
+    public function getAddressAttribute(): ?string
+    {
+        return $this->physical_address;
     }
 }

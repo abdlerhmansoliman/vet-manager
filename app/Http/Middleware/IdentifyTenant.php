@@ -27,6 +27,10 @@ class IdentifyTenant
         $identifier = $this->resolveIdentifier($request);
 
         if ($identifier === null || trim($identifier) === '') {
+            if (! $request->expectsJson() && ! $request->is('api/*')) {
+                return redirect()->route('portal.login');
+            }
+
             return new JsonResponse([
                 'message' => 'Tenant identification required. Please provide X-Tenant-ID header.',
             ], Response::HTTP_BAD_REQUEST);
@@ -35,12 +39,20 @@ class IdentifyTenant
         $tenant = $this->tenantManager->resolve($identifier);
 
         if (! $tenant instanceof Tenant) {
+            if (! $request->expectsJson() && ! $request->is('api/*')) {
+                return redirect()->route('portal.login')->withErrors(['email' => 'Clinic not found.']);
+            }
+
             return new JsonResponse([
                 'message' => 'Tenant not found.',
             ], Response::HTTP_NOT_FOUND);
         }
 
         if ($tenant->isSuspended() || ! $tenant->isActive()) {
+            if (! $request->expectsJson() && ! $request->is('api/*')) {
+                return redirect()->route('portal.login')->withErrors(['email' => 'Clinic account is suspended or inactive.']);
+            }
+
             return new JsonResponse([
                 'message' => 'Tenant account suspended or inactive.',
             ], Response::HTTP_FORBIDDEN);
@@ -58,13 +70,20 @@ class IdentifyTenant
     }
 
     /**
-     * Resolve the tenant identifier from headers or subdomain.
+     * Resolve the tenant identifier from headers, session, or subdomain.
      */
     private function resolveIdentifier(Request $request): ?string
     {
         $header = $request->header('X-Tenant-ID');
         if (! empty($header)) {
             return (string) $header;
+        }
+
+        if ($request->hasSession() && $request->session()->has('active_tenant_id')) {
+            $sessionTenantId = (string) $request->session()->get('active_tenant_id');
+            if ($sessionTenantId !== '') {
+                return $sessionTenantId;
+            }
         }
 
         $host = $request->getHost();
