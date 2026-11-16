@@ -6,16 +6,21 @@ namespace Tests\Feature;
 
 use App\Enums\ContainerStatus;
 use App\Enums\MeasurementBaseUnit;
+use App\Enums\StockMovementType;
 use App\Models\InventoryBatch;
 use App\Models\InventoryContainer;
 use App\Models\InventoryMovementLedger;
 use App\Models\InventoryProduct;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Inventory\BatchDeductionService;
+use App\Services\Inventory\InventoryDeductionService;
 use App\Services\Tenancy\TenantManager;
 use Database\Seeders\TenantSeeder;
 use Database\Seeders\TenantStaffSeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class InventoryDeductionRefactorTest extends TestCase
@@ -409,6 +414,218 @@ class InventoryDeductionRefactorTest extends TestCase
         $this->assertEquals('-5.0000', $product->calculateTotalStock());
         $this->assertEquals('-5.0000', $result['remaining_stock']);
         $this->assertEquals('-5.0000', $result['movements'][0]->product_balance_after);
+
+        $tenantManager->reset();
+    }
+
+    public function test_replaying_idempotency_key_with_different_quantity_is_rejected(): void
+    {
+        $alphaTenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($alphaTenant);
+
+        $product = InventoryProduct::query()->create([
+            'id' => (string) Str::uuid(),
+            'name' => 'Ketamine HCl 50mg/ml',
+            'sku' => 'KET-'.uniqid(),
+            'base_unit' => MeasurementBaseUnit::Ml,
+            'is_controlled' => false,
+            'reconciliation_deficit' => '0.0000',
+        ]);
+
+        $batch = InventoryBatch::query()->create([
+            'id' => (string) Str::uuid(),
+            'product_id' => $product->id,
+            'batch_number' => 'KET-LOT-01',
+            'expiration_date' => now()->addYear()->toDateString(),
+            'initial_base_quantity' => '10.0000',
+            'current_base_balance' => '10.0000',
+        ]);
+
+        InventoryContainer::query()->create([
+            'id' => (string) Str::uuid(),
+            'product_id' => $product->id,
+            'batch_id' => $batch->id,
+            'container_identifier' => 'VIAL-01',
+            'initial_base_quantity' => '10.0000',
+            'current_base_balance' => '10.0000',
+            'status' => ContainerStatus::Sealed,
+        ]);
+
+        $service = app(InventoryDeductionService::class);
+        $actor = User::query()->where('email', 'john.miller@alphavet.com')->firstOrFail();
+        $idempotencyKey = (string) Str::uuid();
+
+        // 1. First deduction of 2.0000 ml
+        $firstResult = $service->deduct(
+            product: $product,
+            requiredQuantity: '2.0000',
+            actor: $actor,
+            idempotencyKey: $idempotencyKey
+        );
+
+        $this->assertEquals('2.0000', $firstResult['total_deducted']);
+
+        // 2. Replay with SAME idempotency key and SAME quantity -> succeeds
+        $replaySame = $service->deduct(
+            product: $product,
+            requiredQuantity: '2.0000',
+            actor: $actor,
+            idempotencyKey: $idempotencyKey
+        );
+        $this->assertEquals('2.0000', $replaySame['total_deducted']);
+        $this->assertEquals($firstResult['operation_id'], $replaySame['operation_id']);
+
+        // 3. Replay with SAME idempotency key but DIFFERENT quantity -> throws ValidationException
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('Idempotency key was already used with a different product or quantity.');
+
+        try {
+            $service->deduct(
+                product: $product,
+                requiredQuantity: '4.0000',
+                actor: $actor,
+                idempotencyKey: $idempotencyKey
+            );
+        } finally {
+            $tenantManager->reset();
+        }
+    }
+
+    public function test_batch_deduction_service_records_deficit_in_product_reconciliation_deficit_without_negative_batch_balance(): void
+    {
+        $alphaTenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($alphaTenant);
+
+        $product = InventoryProduct::query()->create([
+            'id' => (string) Str::uuid(),
+            'name' => 'Atropine Sulfate 0.54mg/ml',
+            'sku' => 'ATR-'.uniqid(),
+            'base_unit' => MeasurementBaseUnit::Ml,
+            'is_controlled' => false,
+            'reconciliation_deficit' => '0.0000',
+        ]);
+
+        $batch = InventoryBatch::query()->create([
+            'id' => (string) Str::uuid(),
+            'product_id' => $product->id,
+            'batch_number' => 'ATR-BATCH-001',
+            'expiration_date' => now()->addYear()->toDateString(),
+            'initial_base_quantity' => '5.0000',
+            'current_base_balance' => '5.0000',
+        ]);
+
+        $batchService = app(BatchDeductionService::class);
+        $actor = User::query()->where('email', 'john.miller@alphavet.com')->firstOrFail();
+
+        // Deduct 8.0000 ml when only 5.0000 ml is in the batch, with allowNegativeBalance=true
+        $result = $batchService->deduct(
+            product: $product,
+            doseAmountBaseUnits: '8.0000',
+            actor: $actor,
+            allowNegativeBalance: true
+        );
+
+        $batch->refresh();
+        $product->refresh();
+
+        // Batch balance should be 0.0000, NOT negative!
+        $this->assertEquals('0.0000', $batch->current_base_balance);
+
+        // Product reconciliation_deficit should record remaining 3.0000
+        $this->assertEquals('3.0000', $product->reconciliation_deficit);
+        $this->assertEquals('-3.0000', $product->calculateTotalStock());
+        $this->assertEquals('-3.0000', $result['remaining_stock']);
+
+        // Check movements
+        $this->assertCount(2, $result['movements']);
+        // First movement: batch deduction
+        $this->assertEquals($batch->id, $result['movements'][0]->batch_id);
+        $this->assertEquals('-5.0000', $result['movements'][0]->quantity);
+        $this->assertEquals('0.0000', $result['movements'][0]->balance_after);
+
+        // Second movement: reconciliation deficit
+        $this->assertNull($result['movements'][1]->batch_id);
+        $this->assertNull($result['movements'][1]->balance_after);
+        $this->assertEquals('-3.0000', $result['movements'][1]->quantity);
+        $this->assertEquals('-3.0000', $result['movements'][1]->product_balance_after);
+
+        // Ensure no fake reconciliation batch was created
+        $batchCount = InventoryBatch::query()->where('product_id', $product->id)->count();
+        $this->assertEquals(1, $batchCount);
+
+        $tenantManager->reset();
+    }
+
+    public function test_deleting_batch_or_container_with_ledger_records_is_blocked_by_foreign_key_restrict(): void
+    {
+        $alphaTenant = Tenant::query()->where('slug', 'alphavet')->firstOrFail();
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($alphaTenant);
+
+        $product = InventoryProduct::query()->create([
+            'id' => (string) Str::uuid(),
+            'name' => 'Tramadol 50mg/ml',
+            'sku' => 'TRAM-'.uniqid(),
+            'base_unit' => MeasurementBaseUnit::Ml,
+            'is_controlled' => false,
+            'reconciliation_deficit' => '0.0000',
+        ]);
+
+        $batch = InventoryBatch::query()->create([
+            'id' => (string) Str::uuid(),
+            'product_id' => $product->id,
+            'batch_number' => 'TRAM-LOT-01',
+            'expiration_date' => now()->addYear()->toDateString(),
+            'initial_base_quantity' => '10.0000',
+            'current_base_balance' => '10.0000',
+        ]);
+
+        $container = InventoryContainer::query()->create([
+            'id' => (string) Str::uuid(),
+            'product_id' => $product->id,
+            'batch_id' => $batch->id,
+            'container_identifier' => 'BOTTLE-01',
+            'initial_base_quantity' => '10.0000',
+            'current_base_balance' => '10.0000',
+            'status' => ContainerStatus::Sealed,
+        ]);
+
+        $actor = User::query()->where('email', 'john.miller@alphavet.com')->firstOrFail();
+
+        // Create a ledger record referencing this batch and container
+        InventoryMovementLedger::query()->create([
+            'idempotency_key' => (string) Str::uuid(),
+            'operation_id' => (string) Str::uuid(),
+            'product_id' => $product->id,
+            'batch_id' => $batch->id,
+            'container_id' => $container->id,
+            'movement_type' => StockMovementType::Receive,
+            'quantity' => '10.0000',
+            'balance_after' => '10.0000',
+            'product_balance_after' => '10.0000',
+            'reason' => 'Initial receipt',
+            'recorded_by_user_id' => $actor->id,
+        ]);
+
+        // Attempting to delete container must fail due to foreign key RESTRICT
+        $containerDeleteBlocked = false;
+        try {
+            $container->delete();
+        } catch (QueryException $e) {
+            $containerDeleteBlocked = true;
+        }
+        $this->assertTrue($containerDeleteBlocked, 'Expected container deletion to be blocked by foreign key restrict.');
+
+        // Attempting to delete batch must fail due to foreign key RESTRICT
+        $batchDeleteBlocked = false;
+        try {
+            $batch->delete();
+        } catch (QueryException $e) {
+            $batchDeleteBlocked = true;
+        }
+        $this->assertTrue($batchDeleteBlocked, 'Expected batch deletion to be blocked by foreign key restrict.');
 
         $tenantManager->reset();
     }

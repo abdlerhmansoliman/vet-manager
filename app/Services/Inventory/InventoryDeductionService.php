@@ -80,15 +80,25 @@ class InventoryDeductionService
             // 1. Idempotency replay check
             if ($idempotencyKey !== null && $idempotencyKey !== '') {
                 $existingMovements = InventoryMovementLedger::query()
-                    ->where('product_id', $lockedProduct->id)
                     ->where('idempotency_key', $idempotencyKey)
                     ->orderBy('created_at', 'asc')
                     ->get();
 
                 if ($existingMovements->isNotEmpty()) {
+                    $originalTotal = $existingMovements->reduce(
+                        fn (string $carry, $m) => bcadd($carry, ltrim((string) $m->quantity, '-'), 4),
+                        '0.0000'
+                    );
+
+                    if ($existingMovements->first()->product_id !== $lockedProduct->id || bccomp($originalTotal, $requiredQuantityStr, 4) !== 0) {
+                        throw ValidationException::withMessages([
+                            'idempotency_key' => ['Idempotency key was already used with a different product or quantity.'],
+                        ]);
+                    }
+
                     return [
                         'product' => $lockedProduct,
-                        'total_deducted' => $requiredQuantityStr,
+                        'total_deducted' => $originalTotal,
                         'remaining_stock' => $lockedProduct->calculateTotalStock(),
                         'movements' => $existingMovements->all(),
                         'operation_id' => $existingMovements->first()->operation_id ?? (string) Str::uuid(),
@@ -271,7 +281,7 @@ class InventoryDeductionService
                     'container_id' => null,
                     'movement_type' => $movementType,
                     'quantity' => '-'.$deficitToAdd,
-                    'balance_after' => $runningProductBalance,
+                    'balance_after' => null,
                     'product_balance_after' => $runningProductBalance,
                     'reason' => ($reason ?? 'Clinical dose deduction').' (Offline reconciliation deficit)',
                     'witnessed_by_user_id' => $witness?->id,

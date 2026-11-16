@@ -64,15 +64,25 @@ class BatchDeductionService
             // 1. Idempotency replay check
             if ($idempotencyKey !== null && $idempotencyKey !== '') {
                 $existingMovements = InventoryMovementLedger::query()
-                    ->where('product_id', $lockedProduct->id)
                     ->where('idempotency_key', $idempotencyKey)
                     ->orderBy('created_at', 'asc')
                     ->get();
 
                 if ($existingMovements->isNotEmpty()) {
+                    $originalTotal = $existingMovements->reduce(
+                        fn (string $carry, $m) => bcadd($carry, ltrim((string) $m->quantity, '-'), 4),
+                        '0.0000'
+                    );
+
+                    if ($existingMovements->first()->product_id !== $lockedProduct->id || bccomp($originalTotal, $doseAmountStr, 4) !== 0) {
+                        throw ValidationException::withMessages([
+                            'idempotency_key' => ['Idempotency key was already used with a different product or quantity.'],
+                        ]);
+                    }
+
                     return [
                         'product' => $lockedProduct,
-                        'total_deducted' => $doseAmountStr,
+                        'total_deducted' => $originalTotal,
                         'remaining_stock' => $lockedProduct->calculateTotalStock(),
                         'movements' => $existingMovements->all(),
                         'batches_affected' => [],
@@ -167,39 +177,27 @@ class BatchDeductionService
 
             // Offline reconciliation deficit handling
             if ($allowNegativeBalance && $remainingToDeductVO->isPositive()) {
-                $targetBatch = $batches->last() ?? InventoryBatch::query()->where('product_id', $lockedProduct->id)->latest('expiration_date')->lockForUpdate()->first();
-                if (! $targetBatch instanceof InventoryBatch) {
-                    $targetBatch = InventoryBatch::query()->create([
-                        'id' => (string) Str::uuid(),
-                        'product_id' => $lockedProduct->id,
-                        'batch_number' => 'BATCH-RECONCILIATION-'.substr((string) Str::uuid(), 0, 8),
-                        'expiration_date' => now()->addYear(),
-                        'initial_base_quantity' => '0.0000',
-                        'current_base_balance' => '0.0000',
-                    ]);
-                }
+                $deficitToAdd = $remainingToDeductVO->value();
+                $lockedProduct->reconciliation_deficit = bcadd(
+                    (string) ($lockedProduct->reconciliation_deficit ?? '0.0000'),
+                    $deficitToAdd,
+                    4
+                );
+                $lockedProduct->save();
 
-                $newBalance = bcsub((string) $targetBatch->current_base_balance, $remainingToDeductVO->value(), 4);
-                $targetBatch->current_base_balance = $newBalance;
-                $targetBatch->save();
-
-                if (! in_array($targetBatch, $batchesAffected, true)) {
-                    $batchesAffected[] = $targetBatch;
-                }
-
-                $runningProductBalance = bcsub($runningProductBalance, $remainingToDeductVO->value(), 4);
+                $runningProductBalance = bcsub($runningProductBalance, $deficitToAdd, 4);
 
                 $movements[] = InventoryMovementLedger::query()->create([
                     'idempotency_key' => $idempotencyKey,
                     'operation_id' => $operationId,
                     'product_id' => $lockedProduct->id,
-                    'batch_id' => $targetBatch->id,
+                    'batch_id' => null,
                     'container_id' => null,
                     'movement_type' => $movementType,
-                    'quantity' => '-'.$remainingToDeductVO->value(),
-                    'balance_after' => $newBalance,
+                    'quantity' => '-'.$deficitToAdd,
+                    'balance_after' => null,
                     'product_balance_after' => $runningProductBalance,
-                    'reason' => ($reason ?? "Clinical dose deduction of {$remainingToDeductVO->value()} {$lockedProduct->base_unit->value}").' (Offline reconciliation deficit)',
+                    'reason' => ($reason ?? "Clinical dose deduction of {$deficitToAdd} {$lockedProduct->base_unit->value}").' (Offline reconciliation deficit)',
                     'recorded_by_user_id' => $actor->id,
                     'created_at' => $now,
                 ]);
