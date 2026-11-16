@@ -26,7 +26,7 @@ Every incoming API request must adhere to standard HTTP header specifications:
 | `X-Device-ID` | `string` | Optional | Unique hardware identifier for audit logs |
 
 ### 1.2 Idempotency Replay Mechanics
-When `Idempotency-Key` is provided:
+When `Idempotency-Key` is provided on standard REST endpoints:
 1. The server checks Redis cache key `idempotency:{tenant_id}:{key}`.
 2. If currently executing, returns `409 Conflict` with `error_code: "MUTATION_IN_PROGRESS"`.
 3. If previously executed within 24 hours, returns the cached HTTP status code and response payload with header:
@@ -34,6 +34,8 @@ When `Idempotency-Key` is provided:
    Idempotent-Replay: true
    ```
 4. If new, executes the database transaction, persists the `idempotency_key` in the database, caches the response in Redis for 86,400 seconds (24 hours), and returns the new resource.
+
+*Note for Sync Push Batch Mutations*: Offline sync push mutations (`/api/v1/sync/push`) do not rely on Redis for idempotency; they commit receipts directly into the tenant's `sync_mutation_receipts` table within the same database transaction/savepoint as the mutation itself, guaranteeing that rollbacks roll back the idempotency record simultaneously.
 
 ### 1.3 Standard Response Formats
 
@@ -651,7 +653,10 @@ Allows legal corrective addenda without modifying original clinical notes.
     "reason_for_visit": "Splint became wet, replacement required"
   }
   ```
-- **Constraint**: Cannot modify a visit once it has been signed and locked (`is_signed = true`).
+- **Constraints & Signature Security**:
+  - Cannot modify a visit once it has been signed and locked (`is_signed = true`). Any update attempt returns `422 Unprocessable Content`.
+  - Client-supplied `signed_by` and `signed_at` fields are stripped from the request. When `is_signed: true` is sent, the server securely assigns `signed_at = now()` and `signed_by = (string) $actor->id`.
+  - Belonging clinical progress notes and dose administrations cannot be altered or moved after signing.
 - **Response `200 OK`**: Returns updated visit object.
 
 ---
@@ -688,6 +693,7 @@ Deducts precise fractional units from physical stock via pessimistic locking (`l
 ```json
 {
   "active_medication_id": "018f4a22-9999-7000-8000-000000000022",
+  "visit_id": "018f4a15-4444-7000-8000-000000000015",
   "product_id": "018f4a20-8888-7000-8000-000000000020",
   "dose_amount_base_units": 2.5000,
   "route_administered": "IV",
@@ -698,6 +704,7 @@ Deducts precise fractional units from physical stock via pessimistic locking (`l
 }
 ```
 - **Validation**:
+  * `visit_id`: `nullable|string|uuid|exists:tenant.visits,id` (must belong to an unsigned/open visit)
   * `product_id`: `required|uuid|exists:tenant.inventory_products,id`
   * `dose_amount_base_units`: `required|numeric|gt:0`
   * `route_administered`: `required|string|max:32`
@@ -705,13 +712,14 @@ Deducts precise fractional units from physical stock via pessimistic locking (`l
   * `witness_pin`: `required_if:product.is_controlled,true|nullable|string|size:4`
 - **Execution Lifecycle**:
   1. Validates witness credentials if `is_controlled == true`.
-  2. Begins DB Transaction (`FOR UPDATE`).
-  3. Checks for active open container (`inventory_open_containers`).
-  4. If open container exists, deducts `2.5000 ml` from it; if volume hits `0.0000`, marks status `depleted`.
-  5. If no open container, executes FEFO query on batches (`inventory_batches ORDER BY expiration_date ASC`), opens container, and deducts stock.
-  6. Inserts immutable record into `stock_movement_ledger`.
-  7. Inserts into `dose_administrations`.
-  8. Commits transaction and returns response.
+  2. If `visit_id` is provided, ensures the visit is not signed/locked.
+  3. Begins DB Transaction (`FOR UPDATE`).
+  4. Checks for active open container (`inventory_open_containers`).
+  5. If open container exists, deducts `2.5000 ml` from it; if volume hits `0.0000`, marks status `depleted`.
+  6. If no open container, executes FEFO query on batches (`inventory_batches ORDER BY expiration_date ASC`), opens container, and deducts stock.
+  7. Inserts immutable record into `stock_movement_ledger`.
+  8. Inserts into `dose_administrations` (with `visit_id`).
+  9. Commits transaction and returns response.
 - **Response `201 Created`**:
 ```json
 {
@@ -719,6 +727,7 @@ Deducts precise fractional units from physical stock via pessimistic locking (`l
   "data": {
     "dose_administration_id": "018f4a25-aaaa-7000-8000-000000000025",
     "case_id": "018f4a10-5555-7000-8000-000000000010",
+    "visit_id": "018f4a15-4444-7000-8000-000000000015",
     "product_name": "Diazepam 5 mg/ml Injection",
     "dose_amount_administered": 2.5000,
     "unit": "ml",
@@ -975,10 +984,16 @@ Enqueues an asynchronous report generation job that strips owner identity and co
 Designed for veterinarians performing herd visits or equine evaluations without cellular reception.
 
 ### 8.1 Sync Push (Batch Offline Ingestion)
-Transmits queued mutations created offline in local SQLite/Isar. Evaluates mutations sequentially inside a single atomic database transaction per mutation.
+Transmits queued mutations created offline in local SQLite/Drift. Evaluates mutations sequentially inside a batch transaction with savepoint isolation per mutation.
 
 - **Method**: `POST`
 - **Path**: `/api/v1/sync/push`
+- **Execution Architecture**:
+  1. **Savepoint Isolation**: Each mutation executes within an individual transaction savepoint (`DB::transaction(...)`). A failure on one mutation rolls back only that mutation and records a failed receipt, without failing other mutations in the batch chunk.
+  2. **Database Idempotency**: Deduplication keys are stored in the tenant table `sync_mutation_receipts`. If a mutation was already processed, it is skipped idempotently. If a mutation rolls back, its receipt rolls back atomically.
+  3. **Auto-Provisioning & Placeholders**: Missing parent containers (clients, patients, cases) are auto-provisioned on-the-fly with `is_placeholder = true`. When real entities arrive, `is_placeholder` is cleared to `false`.
+  4. **Clinical Immutability Enforcement**: Any mutation attempting to modify or delete clinical progress notes or doses on a signed visit is strictly rejected. In addition, client-supplied `signed_by` and `signed_at` fields on visits and notes are stripped and replaced with authenticated actor credentials.
+  5. **Private Realtime Broadcasting**: On batch completion, `SyncBatchCompletedEvent` broadcasts to private channel `private-tenant.{tenantId}.user.{userId}`.
 - **Request Body**:
 ```json
 {
@@ -993,6 +1008,7 @@ Transmits queued mutations created offline in local SQLite/Isar. Evaluates mutat
       "client_created_at": "2026-10-13T17:15:22Z",
       "payload": {
         "case_id": "018f4a10-5555-7000-8000-000000000010",
+        "visit_id": "018f4a15-4444-7000-8000-000000000015",
         "product_id": "018f4a20-8888-7000-8000-000000000020",
         "dose_amount_base_units": 2.5000,
         "route_administered": "IV",
@@ -1008,6 +1024,7 @@ Transmits queued mutations created offline in local SQLite/Isar. Evaluates mutat
       "client_created_at": "2026-10-13T17:20:00Z",
       "payload": {
         "case_id": "018f4a10-5555-7000-8000-000000000010",
+        "visit_id": "018f4a15-4444-7000-8000-000000000015",
         "log_type": "vital_signs",
         "temperature_celsius": 38.30,
         "heart_rate_bpm": 40,

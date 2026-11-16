@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Visits\CreateVisitRequest;
 use App\Http\Requests\Visits\UpdateVisitRequest;
 use App\Models\ClinicalCase;
+use App\Models\User;
 use App\Models\Visit;
 use App\Transformers\VisitTransformer;
 use Illuminate\Http\JsonResponse;
@@ -66,7 +67,9 @@ class VisitController extends Controller
         UpdateVisitRequest $request,
         UpdateVisitAction $action
     ): JsonResponse {
-        $updated = $action->execute($visit, $request->toDTO());
+        /** @var User|null $actor */
+        $actor = $request->user();
+        $updated = $action->execute($visit, $request->toDTO(), $actor);
 
         return response()->json([
             'data' => VisitTransformer::item($updated),

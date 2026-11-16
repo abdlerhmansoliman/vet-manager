@@ -13,7 +13,6 @@ use App\Services\Tenancy\TenantManager;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -140,7 +139,6 @@ class ProcessSyncMutationsJob implements ShouldQueue
                     $chunkResults = DB::transaction(function () use (
                         $chunk,
                         $fallbackVetId,
-                        $tenantKey,
                         &$existingClientIds,
                         &$existingPatientIds,
                         &$existingCaseIds,
@@ -172,45 +170,75 @@ class ProcessSyncMutationsJob implements ShouldQueue
                                 continue;
                             }
 
-                            // Idempotency check: deduplicate mutations per tenant using idempotency_key
+                            // Savepoint-isolated mutation processing with tenant DB idempotency receipts
                             $idempotencyKey = $mutation['idempotency_key'] ?? null;
-                            if ($idempotencyKey !== null && $idempotencyKey !== '') {
-                                $cacheKey = "sync:mutation:{$tenantKey}:{$idempotencyKey}";
-                                if (Cache::has($cacheKey)) {
-                                    $results[] = [
+
+                            try {
+                                $res = DB::transaction(function () use (
+                                    $action,
+                                    $targetId,
+                                    $entityType,
+                                    $mutationId,
+                                    $entityId,
+                                    $payload,
+                                    $idempotencyKey,
+                                    $fallbackVetId,
+                                    &$existingClientIds,
+                                    &$existingPatientIds,
+                                    &$existingCaseIds,
+                                    &$existingVetIds
+                                ): array {
+                                    // Fix F5: Idempotency deduplication using tenant DB sync_mutation_receipts table
+                                    if ($idempotencyKey !== null && $idempotencyKey !== '') {
+                                        $alreadyApplied = DB::table('sync_mutation_receipts')
+                                            ->where('idempotency_key', $idempotencyKey)
+                                            ->exists();
+
+                                        if ($alreadyApplied) {
+                                            return [
+                                                'mutation_id' => $mutationId,
+                                                'entity_type' => $entityType,
+                                                'entity_id' => $entityId,
+                                                'status' => 'applied',
+                                                'message' => 'Idempotent replay: mutation already applied.',
+                                            ];
+                                        }
+                                    }
+
+                                    match ($entityType) {
+                                        'client', 'clients' => $this->applyClientMutation($action, $targetId, $payload, $existingClientIds),
+                                        'patient', 'patients' => $this->applyPatientMutation($action, $targetId, $payload, $existingClientIds, $existingPatientIds),
+                                        'case', 'cases', 'clinical_case', 'clinical_cases' => $this->applyCaseMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
+                                        'visit', 'visits' => $this->applyVisitMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds),
+                                        'progress_note', 'progress_notes', 'clinical_progress_note', 'clinical_progress_notes' => $this->applyProgressNoteMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
+                                        'dose', 'doses', 'dose_administration', 'dose_administrations' => $this->applyDoseMutation($action, $targetId, $payload, $fallbackVetId),
+                                        'species' => $this->applySpeciesMutation($action, $targetId, $payload),
+                                        default => throw new \InvalidArgumentException("Unsupported entity type: {$entityType}"),
+                                    };
+
+                                    // Atomically record receipt in tenant DB inside the same savepoint
+                                    if ($idempotencyKey !== null && $idempotencyKey !== '') {
+                                        DB::table('sync_mutation_receipts')->insert([
+                                            'id' => (string) Str::uuid(),
+                                            'idempotency_key' => $idempotencyKey,
+                                            'mutation_id' => $mutationId,
+                                            'entity_type' => (string) $entityType,
+                                            'entity_id' => (string) $targetId,
+                                            'user_id' => $this->userId !== '' ? $this->userId : null,
+                                            'batch_id' => $this->batchId,
+                                            'created_at' => now(),
+                                        ]);
+                                    }
+
+                                    return [
                                         'mutation_id' => $mutationId,
                                         'entity_type' => $entityType,
                                         'entity_id' => $entityId,
                                         'status' => 'applied',
-                                        'message' => 'Idempotent replay: mutation already applied.',
                                     ];
+                                });
 
-                                    continue;
-                                }
-                            }
-
-                            try {
-                                match ($entityType) {
-                                    'client', 'clients' => $this->applyClientMutation($action, $targetId, $payload, $existingClientIds),
-                                    'patient', 'patients' => $this->applyPatientMutation($action, $targetId, $payload, $existingClientIds, $existingPatientIds),
-                                    'case', 'cases', 'clinical_case', 'clinical_cases' => $this->applyCaseMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
-                                    'visit', 'visits' => $this->applyVisitMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds),
-                                    'progress_note', 'progress_notes', 'clinical_progress_note', 'clinical_progress_notes' => $this->applyProgressNoteMutation($action, $targetId, $payload, $fallbackVetId, $existingClientIds, $existingPatientIds, $existingCaseIds, $existingVetIds),
-                                    'dose', 'doses', 'dose_administration', 'dose_administrations' => $this->applyDoseMutation($action, $targetId, $payload, $fallbackVetId),
-                                    'species' => $this->applySpeciesMutation($action, $targetId, $payload),
-                                    default => throw new \InvalidArgumentException("Unsupported entity type: {$entityType}"),
-                                };
-
-                                if ($idempotencyKey !== null && $idempotencyKey !== '') {
-                                    Cache::put("sync:mutation:{$tenantKey}:{$idempotencyKey}", true, now()->addDays(7));
-                                }
-
-                                $results[] = [
-                                    'mutation_id' => $mutationId,
-                                    'entity_type' => $entityType,
-                                    'entity_id' => $entityId,
-                                    'status' => 'applied',
-                                ];
+                                $results[] = $res;
                             } catch (\DomainException $e) {
                                 $results[] = [
                                     'mutation_id' => $mutationId,
@@ -227,6 +255,15 @@ class ProcessSyncMutationsJob implements ShouldQueue
                                     'status' => 'ignored',
                                     'message' => $e->getMessage(),
                                 ];
+                            } catch (\Throwable $e) {
+                                // Fix F11: Savepoint isolated failure. Does not fail other mutations in the chunk.
+                                $results[] = [
+                                    'mutation_id' => $mutationId,
+                                    'entity_type' => $entityType,
+                                    'entity_id' => $entityId,
+                                    'status' => 'failed',
+                                    'message' => $e->getMessage(),
+                                ];
                             }
                         }
 
@@ -237,7 +274,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                         $allResults[] = $res;
                     }
                 } catch (\Throwable $e) {
-                    // Rollback ONLY that chunk if it fails, and record failed status so the next chunk can proceed
+                    // Fallback if chunk transaction initialization fails
                     foreach ($chunk as $mutation) {
                         $allResults[] = [
                             'mutation_id' => $mutation['mutation_id'] ?? $mutation['id'] ?? null,
@@ -250,8 +287,8 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 }
             }
 
-            // 3. Fire broadcast event passing the batch ID and final results array
-            SyncBatchCompletedEvent::dispatch($this->batchId, $allResults);
+            // 3. Fire broadcast event passing the batch ID and final results array on PrivateChannel
+            SyncBatchCompletedEvent::dispatch($this->batchId, $allResults, (string) ($this->tenantId ?? ''), $this->userId);
         } finally {
             $tenantManager->reset();
         }
@@ -330,6 +367,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
         }
 
         $now = now();
+        $isPlaceholder = ! empty($payload['is_placeholder']) ? 1 : 0;
 
         DB::table('clients')->upsert(
             [
@@ -341,6 +379,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 'phone_secondary' => $payload['phone_secondary'] ?? null,
                 'physical_address' => $payload['physical_address'] ?? null,
                 'notes' => $payload['notes'] ?? null,
+                'is_placeholder' => $isPlaceholder,
                 'created_at' => $payload['created_at'] ?? $now,
                 'updated_at' => $payload['updated_at'] ?? $now,
             ],
@@ -353,6 +392,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 'phone_secondary',
                 'physical_address',
                 'notes',
+                'is_placeholder',
                 'updated_at',
             ]
         );
@@ -400,6 +440,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                     'client_type' => 'individual',
                     'name' => 'Auto-Registered Client',
                     'phone_primary' => 'N/A',
+                    'is_placeholder' => 1,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ],
@@ -417,6 +458,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                         'client_type' => 'individual',
                         'name' => 'Auto-Registered Client',
                         'phone_primary' => 'N/A',
+                        'is_placeholder' => 1,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ],
@@ -442,6 +484,8 @@ class ProcessSyncMutationsJob implements ShouldQueue
             $allergies = json_encode($allergies);
         }
 
+        $isPlaceholder = ! empty($payload['is_placeholder']) ? 1 : 0;
+
         DB::table('patients')->upsert(
             [
                 'id' => $patientId,
@@ -462,6 +506,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 'notes' => $payload['notes'] ?? null,
                 'status' => $payload['status'] ?? 'active',
                 'allergies' => $allergies,
+                'is_placeholder' => $isPlaceholder,
                 'created_at' => $payload['created_at'] ?? $now,
                 'updated_at' => $payload['updated_at'] ?? $now,
             ],
@@ -484,6 +529,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 'notes',
                 'status',
                 'allergies',
+                'is_placeholder',
                 'updated_at',
             ]
         );
@@ -545,6 +591,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                         'client_type' => 'individual',
                         'name' => 'Auto-Registered Client',
                         'phone_primary' => 'N/A',
+                        'is_placeholder' => 1,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ],
@@ -562,6 +609,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                     'species' => 'Canine',
                     'gender' => 'unknown',
                     'status' => 'active',
+                    'is_placeholder' => 1,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ],
@@ -582,6 +630,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                             'client_type' => 'individual',
                             'name' => 'Auto-Registered Client',
                             'phone_primary' => 'N/A',
+                            'is_placeholder' => 1,
                             'created_at' => $now,
                             'updated_at' => $now,
                         ],
@@ -599,6 +648,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                         'species' => 'Canine',
                         'gender' => 'unknown',
                         'status' => 'active',
+                        'is_placeholder' => 1,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ],
@@ -611,6 +661,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
         }
 
         $caseNumber = $payload['case_number'] ?? 'CAS-'.strtoupper(substr(str_replace('-', '', (string) $caseId), 0, 8));
+        $isPlaceholder = ! empty($payload['is_placeholder']) ? 1 : 0;
 
         DB::table('cases')->upsert(
             [
@@ -624,6 +675,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 'chief_complaint' => $payload['chief_complaint'] ?? 'Clinical examination',
                 'provisional_diagnosis' => $payload['provisional_diagnosis'] ?? null,
                 'final_diagnosis' => $payload['final_diagnosis'] ?? null,
+                'is_placeholder' => $isPlaceholder,
                 'admitted_at' => $payload['admitted_at'] ?? $now,
                 'created_at' => $payload['created_at'] ?? $now,
                 'updated_at' => $payload['updated_at'] ?? $now,
@@ -638,6 +690,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 'chief_complaint',
                 'provisional_diagnosis',
                 'final_diagnosis',
+                'is_placeholder',
                 'admitted_at',
                 'updated_at',
             ]
@@ -664,17 +717,25 @@ class ProcessSyncMutationsJob implements ShouldQueue
         array &$existingCaseIds,
         array &$existingVetIds
     ): void {
+        $existingNote = DB::table('clinical_progress_notes')->where('id', $noteId)->first();
+        if ($existingNote && ! empty($existingNote->is_signed)) {
+            throw new \DomainException("Progress note {$noteId} is signed and locked (is_signed=true). Modifications are strictly rejected.");
+        }
+
+        // Strict check: if existing note belongs to a signed visit, reject modifications, moves, and deletions
+        if ($existingNote && ! empty($existingNote->visit_id) && Schema::connection('tenant')->hasTable('visits')) {
+            $currentVisit = DB::table('visits')->where('id', $existingNote->visit_id)->first();
+            if ($currentVisit && ! empty($currentVisit->is_signed)) {
+                throw new \DomainException("Progress note {$noteId} belongs to a signed and locked visit {$existingNote->visit_id}. Modifications, moves, and deletions are strictly rejected.");
+            }
+        }
+
         $visitId = $payload['visit_id'] ?? null;
         if ($visitId && Schema::connection('tenant')->hasTable('visits')) {
             $visit = DB::table('visits')->where('id', $visitId)->first();
             if ($visit && ! empty($visit->is_signed)) {
-                throw new \DomainException("Associated visit {$visitId} is signed and locked (is_signed=true). Progress note modifications are strictly rejected.");
+                throw new \DomainException("Target visit {$visitId} is signed and locked (is_signed=true). Progress note modifications are strictly rejected.");
             }
-        }
-
-        $existingNote = DB::table('clinical_progress_notes')->where('id', $noteId)->first();
-        if ($existingNote && ! empty($existingNote->is_signed)) {
-            throw new \DomainException("Progress note {$noteId} is signed and locked (is_signed=true). Modifications are strictly rejected.");
         }
 
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
@@ -705,6 +766,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                             'client_type' => 'individual',
                             'name' => 'Auto-Registered Client',
                             'phone_primary' => 'N/A',
+                            'is_placeholder' => 1,
                             'created_at' => $now,
                             'updated_at' => $now,
                         ],
@@ -722,6 +784,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                         'species' => 'Canine',
                         'gender' => 'unknown',
                         'status' => 'active',
+                        'is_placeholder' => 1,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ],
@@ -741,6 +804,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                     'status' => 'open',
                     'priority' => 'routine',
                     'chief_complaint' => 'Clinical examination',
+                    'is_placeholder' => 1,
                     'admitted_at' => $now,
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -757,8 +821,9 @@ class ProcessSyncMutationsJob implements ShouldQueue
             $vetId = $fallbackVetId;
         }
 
+        // Fix F6/F7: Strip signed_at from client payload. Server securely assigns now() on sign.
         $isSigned = ! empty($payload['is_signed']);
-        $signedAt = $payload['signed_at'] ?? ($isSigned ? $now : null);
+        $signedAt = $isSigned ? $now : null;
 
         $subjective = is_array($payload['subjective_notes'] ?? null) ? json_encode($payload['subjective_notes']) : ($payload['subjective_notes'] ?? null);
         $objective = is_array($payload['objective_notes'] ?? null) ? json_encode($payload['objective_notes']) : ($payload['objective_notes'] ?? null);
@@ -889,6 +954,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                             'client_type' => 'individual',
                             'name' => 'Auto-Registered Client',
                             'phone_primary' => 'N/A',
+                            'is_placeholder' => 1,
                             'created_at' => $now,
                             'updated_at' => $now,
                         ],
@@ -906,6 +972,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                         'species' => 'Canine',
                         'gender' => 'unknown',
                         'status' => 'active',
+                        'is_placeholder' => 1,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ],
@@ -925,6 +992,7 @@ class ProcessSyncMutationsJob implements ShouldQueue
                     'status' => 'open',
                     'priority' => 'routine',
                     'chief_complaint' => 'Clinical Encounter',
+                    'is_placeholder' => 1,
                     'admitted_at' => $now,
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -939,6 +1007,17 @@ class ProcessSyncMutationsJob implements ShouldQueue
             $caseId = ! empty($existingCaseIds) ? (string) array_key_first($existingCaseIds) : (string) DB::table('cases')->value('id');
         }
 
+        // Fix F6/F7: Strip signed_by and signed_at from client payload.
+        // Server MUST securely assign $actor->id and now() during lock transition.
+        $isSigned = ! empty($payload['is_signed']);
+        $signedAt = null;
+        $signedBy = null;
+
+        if ($isSigned) {
+            $signedAt = $now;
+            $signedBy = $this->userId !== '' ? $this->userId : $fallbackVetId;
+        }
+
         DB::table('visits')->upsert(
             [
                 'id' => $visitId,
@@ -946,9 +1025,9 @@ class ProcessSyncMutationsJob implements ShouldQueue
                 'title' => $payload['title'] ?? 'Visit',
                 'visit_type' => $payload['visit_type'] ?? 'outpatient',
                 'status' => $payload['status'] ?? 'open',
-                'is_signed' => (bool) ($payload['is_signed'] ?? false) ? 1 : 0,
-                'signed_at' => $payload['signed_at'] ?? null,
-                'signed_by' => $payload['signed_by'] ?? null,
+                'is_signed' => $isSigned ? 1 : 0,
+                'signed_at' => $signedAt,
+                'signed_by' => $signedBy,
                 'reason_for_visit' => $payload['reason_for_visit'] ?? null,
                 'visit_date' => $payload['visit_date'] ?? $now,
                 'created_at' => $payload['created_at'] ?? $now,
@@ -980,6 +1059,23 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         $existing = DB::table('dose_administrations')->where('id', $doseId)->first();
 
+        // Strict check: if existing dose belongs to a signed visit, reject modifications, moves, and deletions
+        if ($existing && ! empty($existing->visit_id) && Schema::connection('tenant')->hasTable('visits')) {
+            $currentVisit = DB::table('visits')->where('id', $existing->visit_id)->first();
+            if ($currentVisit && ! empty($currentVisit->is_signed)) {
+                throw new \DomainException("Dose administration {$doseId} belongs to a signed and locked visit {$existing->visit_id}. Modifications, moves, and deletions are strictly rejected.");
+            }
+        }
+
+        // Strict check: if target visit is signed, reject adding or moving doses into it
+        $visitId = $payload['visit_id'] ?? null;
+        if ($visitId && Schema::connection('tenant')->hasTable('visits')) {
+            $targetVisit = DB::table('visits')->where('id', $visitId)->first();
+            if ($targetVisit && ! empty($targetVisit->is_signed)) {
+                throw new \DomainException("Target visit {$visitId} is signed and locked (is_signed=true). Dose administration cannot be added to or modified in a signed visit.");
+            }
+        }
+
         $incomingUpdatedAt = ! empty($payload['updated_at']) ? Carbon::parse($payload['updated_at']) : null;
         if ($existing && $incomingUpdatedAt && Carbon::parse($existing->updated_at)->isAfter($incomingUpdatedAt)) {
             throw new \InvalidArgumentException('Server dose record is newer than incoming mutation. Mutation ignored under LWW.');
@@ -1005,16 +1101,21 @@ class ProcessSyncMutationsJob implements ShouldQueue
 
         if ($existing) {
             // Record already exists; update metadata without re-deducting inventory
-            DB::table('dose_administrations')->where('id', $doseId)->update([
+            $updateData = [
                 'route_administered' => $route,
                 'clinical_notes' => $notes,
                 'updated_at' => $payload['updated_at'] ?? $now,
-            ]);
+            ];
+            if ($visitId !== null && Schema::connection('tenant')->hasColumn('dose_administrations', 'visit_id')) {
+                $updateData['visit_id'] = $visitId;
+            }
+
+            DB::table('dose_administrations')->where('id', $doseId)->update($updateData);
 
             return;
         }
 
-        DB::table('dose_administrations')->insert([
+        $insertData = [
             'id' => $doseId,
             'case_id' => $caseId,
             'patient_id' => $patientId,
@@ -1025,7 +1126,12 @@ class ProcessSyncMutationsJob implements ShouldQueue
             'clinical_notes' => $notes,
             'created_at' => $payload['created_at'] ?? $now,
             'updated_at' => $payload['updated_at'] ?? $now,
-        ]);
+        ];
+        if (Schema::connection('tenant')->hasColumn('dose_administrations', 'visit_id')) {
+            $insertData['visit_id'] = $visitId;
+        }
+
+        DB::table('dose_administrations')->insert($insertData);
 
         // If product exists, perform batch deduction with allowNegativeBalance: true
         if ($productId) {

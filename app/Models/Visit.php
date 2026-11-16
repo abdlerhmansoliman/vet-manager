@@ -59,6 +59,12 @@ class Visit extends Model
             ->orderByDesc('created_at');
     }
 
+    public function doseAdministrations(): HasMany
+    {
+        return $this->hasMany(DoseAdministration::class, 'visit_id')
+            ->orderByDesc('created_at');
+    }
+
     public function images(): MorphMany
     {
         return $this->morphMany(Image::class, 'imageable');

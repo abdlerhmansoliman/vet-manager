@@ -100,6 +100,9 @@ The mobile app streams binary bytes directly to `upload_url`:
 
 ## 3. Database Schema Reference
 
+### `clients` & `patients` Tables
+- `is_placeholder` (boolean, default `false`): Flags auto-provisioned entities created offline as placeholders until full entity records arrive.
+
 ### `cases` Table
 - `id` (UUID v7, primary key)
 - `tenant_id` (UUID foreign key)
@@ -108,6 +111,7 @@ The mobile app streams binary bytes directly to `upload_url`:
 - `chief_complaint` (text)
 - `priority` (enum: `routine`, `urgent`, `critical`)
 - `status` (enum: `open`, `in_progress`, `closed`)
+- `is_placeholder` (boolean, default `false`)
 - `admitted_at`, `discharged_at` (timestamps)
 
 ### `visits` Table
@@ -119,9 +123,30 @@ The mobile app streams binary bytes directly to `upload_url`:
 - `visit_type` (enum: `consultation`, `follow_up`, `emergency`, `surgery`)
 - `status` (enum: `open`, `completed`, `cancelled`)
 - `is_signed` (boolean)
-- `signed_at` (timestamp)
-- `signed_by` (string)
+- `signed_at` (timestamp, set strictly server-side on signing)
+- `signed_by` (string, UUID of authenticated user, set strictly server-side on signing)
 - `visit_date` (timestamp)
+
+### `dose_administrations` Table
+- `id` (UUID v7, primary key)
+- `tenant_id` (UUID foreign key)
+- `case_id` (UUID foreign key to `cases`)
+- `visit_id` (UUID foreign key to `visits`, nullable, cascade on delete)
+- `product_id` (UUID foreign key)
+- `dose_amount_base_units` (decimal)
+- `route_administered` (string)
+- `administered_at` (timestamp)
+
+### `sync_mutation_receipts` Table
+- `id` (UUID v7, primary key)
+- `tenant_id` (UUID foreign key)
+- `idempotency_key` (string, unique)
+- `mutation_id` (string, indexed)
+- `entity_type` (string)
+- `entity_id` (string, nullable)
+- `user_id` (UUID, nullable)
+- `batch_id` (UUID, nullable)
+- `created_at` (timestamp)
 
 ### `images` Table (Polymorphic)
 - `id` (UUID primary key)
@@ -180,7 +205,10 @@ The mobile app streams binary bytes directly to `upload_url`:
     "reason_for_visit": "Splint removal and wound assessment"
   }
   ```
-- **Constraint**: Cannot modify a visit once it has been signed and locked (`is_signed = true`).
+- **Constraint & Security**:
+  - Cannot modify a visit once it has been signed and locked (`is_signed = true`). Any update attempt returns `422 Unprocessable Content`.
+  - Client-supplied `signed_by` and `signed_at` fields are strictly ignored/stripped by `UpdateVisitRequest`. When `is_signed` transitions to `true`, the server securely assigns `signed_at = now()` and `signed_by = (string) $actor->id`.
+  - **Clinical Immutability Invariant**: Progress notes (`ClinicalProgressNote`) and dose administrations (`DoseAdministration`) belonging to a signed visit cannot be modified, moved to another visit (`visit_id`), or deleted. New notes or doses cannot be attached to an already signed visit.
 - **Response `200 OK`**: Returns updated visit object.
 
 ---
@@ -191,20 +219,24 @@ The mobile app streams binary bytes directly to `upload_url`:
 | :--- | :--- | :--- | :--- | :--- |
 | **Level 1** | **Patient Profile** | Name, species, breed, DOB, weight, microchip, allergies JSON, client owner | `PUT /api/v1/patients/{id}` | Editable at any time |
 | **Level 2** | **Clinical Case** | Chief complaint, provisional/final diagnoses, triage priority, encounter status | `PUT /api/v1/cases/{id}` | Editable at any time; preserves medical umbrella history |
-| **Level 3** | **Visit Encounter** | Title, visit type, reason for visit | `PUT /api/v1/visits/{id}` | Editable only BEFORE record signing; locked upon signing |
+| **Level 3** | **Visit Encounter** | Title, visit type, reason for visit | `PUT /api/v1/visits/{id}` | Editable only BEFORE record signing; permanently locked upon signing |
 
 ---
 
 ## 6. Bidirectional Sync Engine Parity
 
 - **Delta Pull (`GET /api/v1/sync/pull`)**:
-  - `SyncController.php` queries `visits` modified since `since` timestamp:
+  - `SyncController.php` queries `visits` and other domain entities modified since `since` timestamp:
     ```php
     'visits' => Visit::where('tenant_id', $tenantId)
         ->where('updated_at', '>', $since)
         ->get()
     ```
 - **Mutation Ingestion (`POST /api/v1/sync/push`)**:
-  - `ProcessSyncMutationsJob.php` processes `visit` / `visits` mutation items.
-  - **Self-Healing Fallback**: If an offline client pushes a visit referencing a `case_id` not yet created in the cloud, the job automatically creates an umbrella `ClinicalCase` to guarantee zero data loss.
+  - `ProcessSyncMutationsJob.php` processes mutation batches asynchronously.
+  - **Savepoint Isolation**: Each individual mutation is wrapped inside a dedicated database transaction savepoint (`DB::transaction(...)`). If an invalid mutation throws an exception, it rolls back only its own savepoint, isolating failures and preventing blast-radius cascade across the batch chunk.
+  - **Transactional Idempotency**: Deduplication keys are committed to the `sync_mutation_receipts` table inside the tenant database in the exact same transaction/savepoint as the mutation data, preventing phantom deduplication on rollback.
+  - **Offline Self-Healing Fallback & Placeholders**: If an offline client pushes an entity referencing missing parent entities (e.g., patient missing client, or visit missing case), the ingestion job automatically provisions umbrella placeholder records with `is_placeholder = true`. When real entity records arrive, `is_placeholder` is cleared to `false`.
+  - **Clinical Immutability Enforcement**: The sync job rejects any mutation attempting to modify or delete clinical progress notes or dose administrations belonging to a signed/locked visit, or assign notes/doses to a signed visit. Client-supplied signing timestamps and identities on visits and notes are stripped in favor of the authenticated user's ID and server time.
+  - **Private Scoped Realtime Broadcasting**: When the mutation batch completes, `SyncBatchCompletedEvent` is broadcast exclusively over a private channel scoped to the tenant and user: `tenant.{tenantId}.user.{userId}`.
 

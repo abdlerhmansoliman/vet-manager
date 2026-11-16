@@ -173,4 +173,73 @@ class VisitTest extends TestCase
             ->assertJsonPath('data.title', 'Emergency Triage')
             ->assertJsonPath('data.visit_type', 'emergency');
     }
+
+    public function test_client_cannot_forge_signed_by_or_signed_at_on_visit(): void
+    {
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+
+        $visit = Visit::create([
+            'case_id' => $this->case->id,
+            'title' => 'Pre-sign Consult',
+            'visit_type' => 'outpatient',
+            'status' => 'open',
+            'is_signed' => false,
+            'visit_date' => now(),
+        ]);
+
+        $tenantManager->reset();
+
+        $forgedClinician = '00000000-0000-0000-0000-000000000099';
+        $forgedDate = '2020-01-01T00:00:00Z';
+
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->putJson("/api/v1/visits/{$visit->id}", [
+                'is_signed' => true,
+                'signed_by' => $forgedClinician,
+                'signed_at' => $forgedDate,
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.is_signed', true);
+
+        $tenantManager->switch($this->tenant);
+        $reloaded = Visit::findOrFail($visit->id);
+        $tenantManager->reset();
+
+        $this->assertTrue($reloaded->is_signed);
+        // Ensure server securely assigned authenticated vet's ID and did NOT accept forged signature
+        $this->assertEquals($this->veterinarian->id, $reloaded->signed_by);
+        $this->assertNotEquals($forgedClinician, $reloaded->signed_by);
+        $this->assertNotEquals('2020-01-01', $reloaded->signed_at->format('Y-m-d'));
+    }
+
+    public function test_cannot_update_visit_once_signed(): void
+    {
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+
+        $visit = Visit::create([
+            'case_id' => $this->case->id,
+            'title' => 'Locked Visit',
+            'visit_type' => 'outpatient',
+            'status' => 'closed',
+            'is_signed' => true,
+            'signed_at' => now(),
+            'signed_by' => $this->veterinarian->id,
+            'visit_date' => now(),
+        ]);
+
+        $tenantManager->reset();
+
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->putJson("/api/v1/visits/{$visit->id}", [
+                'title' => 'Attempted Title Tampering',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['visit']);
+    }
 }

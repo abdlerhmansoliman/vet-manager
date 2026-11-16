@@ -16,6 +16,7 @@ use App\Services\Tenancy\TenantManager;
 use Carbon\Carbon;
 use Database\Seeders\TenantSeeder;
 use Database\Seeders\TenantStaffSeeder;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -51,6 +52,9 @@ class SyncTest extends TestCase
 
         $tenantManager = app(TenantManager::class);
         $tenantManager->switch($this->tenant);
+        if (DB::getSchemaBuilder()->hasTable('sync_mutation_receipts')) {
+            DB::table('sync_mutation_receipts')->truncate();
+        }
         $this->veterinarian = User::query()->where('email', 'john.miller@alphavet.com')->firstOrFail();
         $tenantManager->reset();
     }
@@ -685,5 +689,323 @@ class SyncTest extends TestCase
                 && $event->results[0]['status'] === 'applied'
                 && str_contains($event->results[0]['message'] ?? '', 'Idempotent replay');
         });
+
+        // Ensure receipt is persisted in the tenant database table
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+        $this->assertDatabaseHas('sync_mutation_receipts', [
+            'idempotency_key' => $idempotencyKey,
+            'entity_type' => 'client',
+            'entity_id' => $clientId,
+        ], 'tenant');
+        $tenantManager->reset();
+    }
+
+    public function test_savepoint_isolates_mutation_failure_without_failing_entire_chunk(): void
+    {
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        $validClientId = (string) Str::uuid();
+
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', [
+                'mutations' => [
+                    [
+                        'mutation_id' => 'mut-invalid-01',
+                        'entity_type' => 'unsupported_entity_type',
+                        'entity_id' => (string) Str::uuid(),
+                        'action' => 'create',
+                        'payload' => ['foo' => 'bar'],
+                    ],
+                    [
+                        'mutation_id' => 'mut-valid-02',
+                        'entity_type' => 'client',
+                        'entity_id' => $validClientId,
+                        'action' => 'create',
+                        'payload' => ['name' => 'Survivor Valid Client'],
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(202);
+
+        Event::assertDispatched(SyncBatchCompletedEvent::class, function (SyncBatchCompletedEvent $event): bool {
+            $results = collect($event->results);
+            $failedMut = $results->firstWhere('mutation_id', 'mut-invalid-01');
+            $validMut = $results->firstWhere('mutation_id', 'mut-valid-02');
+
+            return $failedMut !== null
+                && $failedMut['status'] === 'ignored'
+                && $validMut !== null
+                && $validMut['status'] === 'applied';
+        });
+
+        // Ensure valid client was committed despite the other mutation failing
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+        $this->assertDatabaseHas('clients', ['id' => $validClientId, 'name' => 'Survivor Valid Client'], 'tenant');
+        $tenantManager->reset();
+    }
+
+    public function test_sync_strips_forged_signed_by_and_signed_at_and_server_assigns_actor(): void
+    {
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        $visitId = (string) Str::uuid();
+        $caseId = (string) Str::uuid();
+        $forgedClinician = '00000000-0000-0000-0000-000000000099';
+        $forgedDate = '2019-01-01 00:00:00';
+
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', [
+                'mutations' => [
+                    [
+                        'mutation_id' => 'mut-visit-sign-01',
+                        'entity_type' => 'visit',
+                        'entity_id' => $visitId,
+                        'action' => 'create',
+                        'payload' => [
+                            'id' => $visitId,
+                            'case_id' => $caseId,
+                            'title' => 'Signature Tamper Attempt',
+                            'is_signed' => true,
+                            'signed_by' => $forgedClinician,
+                            'signed_at' => $forgedDate,
+                        ],
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(202);
+
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+        $savedVisit = DB::table('visits')->where('id', $visitId)->first();
+        $tenantManager->reset();
+
+        $this->assertNotNull($savedVisit);
+        $this->assertEquals(1, $savedVisit->is_signed);
+        // Server MUST securely assign authenticated veterinarian ID ($this->veterinarian->id)
+        $this->assertEquals($this->veterinarian->id, $savedVisit->signed_by);
+        $this->assertNotEquals($forgedClinician, $savedVisit->signed_by);
+        $this->assertNotEquals($forgedDate, $savedVisit->signed_at);
+    }
+
+    public function test_sync_rejects_modifying_or_moving_note_or_dose_from_signed_visit(): void
+    {
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+
+        $client = Client::factory()->create();
+        $patient = Patient::factory()->create(['client_id' => $client->id]);
+        $case = ClinicalCase::factory()->create([
+            'patient_id' => $patient->id,
+            'primary_veterinarian_id' => $this->veterinarian->id,
+        ]);
+
+        $signedVisitId = (string) Str::uuid();
+        DB::table('visits')->insert([
+            'id' => $signedVisitId,
+            'case_id' => $case->id,
+            'title' => 'Locked Signed Visit',
+            'visit_type' => 'outpatient',
+            'status' => 'closed',
+            'is_signed' => 1,
+            'signed_at' => now(),
+            'signed_by' => $this->veterinarian->id,
+            'visit_date' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $otherVisitId = (string) Str::uuid();
+        DB::table('visits')->insert([
+            'id' => $otherVisitId,
+            'case_id' => $case->id,
+            'title' => 'Open Second Visit',
+            'visit_type' => 'outpatient',
+            'status' => 'open',
+            'is_signed' => 0,
+            'visit_date' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $noteId = (string) Str::uuid();
+        DB::table('clinical_progress_notes')->insert([
+            'id' => $noteId,
+            'clinical_case_id' => $case->id,
+            'visit_id' => $signedVisitId,
+            'vet_id' => $this->veterinarian->id,
+            'subjective_notes' => 'Original clinical observation',
+            'is_signed' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $productId = (string) Str::uuid();
+        DB::table('inventory_products')->insert([
+            'id' => $productId,
+            'name' => 'Amoxicillin 250mg',
+            'sku' => 'AMOX-'.Str::random(6),
+            'base_unit' => 'ml',
+            'is_controlled' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $doseId = (string) Str::uuid();
+        DB::table('dose_administrations')->insert([
+            'id' => $doseId,
+            'case_id' => $case->id,
+            'visit_id' => $signedVisitId,
+            'patient_id' => $patient->id,
+            'product_id' => $productId,
+            'administered_by_user_id' => $this->veterinarian->id,
+            'dose_amount_base_units' => '1.0000',
+            'route_administered' => 'IV',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $tenantManager->reset();
+
+        // 1. Attempt to move note to another visit
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', [
+                'mutations' => [
+                    [
+                        'mutation_id' => 'mut-move-note-01',
+                        'entity_type' => 'progress_note',
+                        'entity_id' => $noteId,
+                        'action' => 'update',
+                        'payload' => [
+                            'id' => $noteId,
+                            'visit_id' => $otherVisitId,
+                            'subjective_notes' => 'Tampered observation',
+                        ],
+                    ],
+                    [
+                        'mutation_id' => 'mut-move-dose-01',
+                        'entity_type' => 'dose',
+                        'entity_id' => $doseId,
+                        'action' => 'update',
+                        'payload' => [
+                            'id' => $doseId,
+                            'visit_id' => $otherVisitId,
+                            'route_administered' => 'Oral',
+                        ],
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(202);
+
+        Event::assertDispatched(SyncBatchCompletedEvent::class, function (SyncBatchCompletedEvent $event): bool {
+            $results = collect($event->results);
+            $noteRes = $results->firstWhere('mutation_id', 'mut-move-note-01');
+            $doseRes = $results->firstWhere('mutation_id', 'mut-move-dose-01');
+
+            return $noteRes !== null
+                && $noteRes['status'] === 'rejected'
+                && str_contains($noteRes['message'], 'signed and locked visit')
+                && $doseRes !== null
+                && $doseRes['status'] === 'rejected'
+                && str_contains($doseRes['message'], 'signed and locked visit');
+        });
+    }
+
+    public function test_sync_batch_completed_broadcasts_on_private_channel_scoped_by_tenant_and_user(): void
+    {
+        $batchId = (string) Str::uuid();
+        $results = [
+            ['mutation_id' => 'm1', 'status' => 'applied'],
+        ];
+
+        $event = new SyncBatchCompletedEvent(
+            batchId: $batchId,
+            results: $results,
+            tenantId: $this->tenant->id,
+            userId: $this->veterinarian->id
+        );
+
+        $channels = $event->broadcastOn();
+        $this->assertCount(1, $channels);
+        $this->assertInstanceOf(PrivateChannel::class, $channels[0]);
+        $this->assertEquals("private-tenant.{$this->tenant->id}.user.{$this->veterinarian->id}", $channels[0]->name);
+    }
+
+    public function test_auto_provisioned_placeholders_have_is_placeholder_flag_and_clear_on_real_sync(): void
+    {
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        $placeholderClientId = (string) Str::uuid();
+        $patientId = (string) Str::uuid();
+
+        // 1. Patient references unknown client -> Auto-provisions placeholder client
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', [
+                'mutations' => [
+                    [
+                        'mutation_id' => 'mut-pat-01',
+                        'entity_type' => 'patient',
+                        'entity_id' => $patientId,
+                        'action' => 'create',
+                        'payload' => [
+                            'id' => $patientId,
+                            'client_id' => $placeholderClientId,
+                            'name_or_tag' => 'Luna',
+                            'species' => 'Feline',
+                        ],
+                    ],
+                ],
+            ])
+            ->assertStatus(202);
+
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+
+        $clientRecord = DB::table('clients')->where('id', $placeholderClientId)->first();
+        $this->assertNotNull($clientRecord);
+        $this->assertEquals(1, $clientRecord->is_placeholder);
+
+        $tenantManager->reset();
+
+        Event::fake([SyncBatchCompletedEvent::class]);
+
+        // 2. Real client arrives from mobile -> Clears placeholder flag
+        $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->postJson('/api/v1/sync/push', [
+                'mutations' => [
+                    [
+                        'mutation_id' => 'mut-cli-01',
+                        'entity_type' => 'client',
+                        'entity_id' => $placeholderClientId,
+                        'action' => 'create',
+                        'payload' => [
+                            'id' => $placeholderClientId,
+                            'name' => 'Alice Walker',
+                            'phone_primary' => '+1234567890',
+                        ],
+                    ],
+                ],
+            ])
+            ->assertStatus(202);
+
+        $tenantManager->switch($this->tenant);
+
+        $updatedClientRecord = DB::table('clients')->where('id', $placeholderClientId)->first();
+        $this->assertNotNull($updatedClientRecord);
+        $this->assertEquals('Alice Walker', $updatedClientRecord->name);
+        $this->assertEquals(0, $updatedClientRecord->is_placeholder);
+
+        $tenantManager->reset();
     }
 }

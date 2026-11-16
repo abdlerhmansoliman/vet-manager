@@ -23,6 +23,7 @@ class DoseAdministration extends Model
     protected $fillable = [
         'id',
         'case_id',
+        'visit_id',
         'patient_id',
         'product_id',
         'administered_by_user_id',
@@ -44,6 +45,11 @@ class DoseAdministration extends Model
     public function clinicalCase(): BelongsTo
     {
         return $this->belongsTo(ClinicalCase::class, 'case_id');
+    }
+
+    public function visit(): BelongsTo
+    {
+        return $this->belongsTo(Visit::class, 'visit_id');
     }
 
     public function patient(): BelongsTo

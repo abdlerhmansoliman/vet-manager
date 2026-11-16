@@ -17,6 +17,7 @@ class DoseAdministrationTransformer extends Transformer
         return [
             'id' => $item->id,
             'case_id' => $item->case_id,
+            'visit_id' => $item->visit_id,
             'patient_id' => $item->patient_id,
             'product_id' => $item->product_id,
             'product_name' => $item->product?->name,

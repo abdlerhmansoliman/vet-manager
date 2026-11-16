@@ -6,6 +6,7 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -21,7 +22,9 @@ class SyncBatchCompletedEvent implements ShouldBroadcast
      */
     public function __construct(
         public readonly string $batchId,
-        public readonly array $results
+        public readonly array $results,
+        public readonly string $tenantId = '',
+        public readonly string $userId = ''
     ) {}
 
     /**
@@ -32,7 +35,7 @@ class SyncBatchCompletedEvent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel("sync.batch.{$this->batchId}"),
+            new PrivateChannel("tenant.{$this->tenantId}.user.{$this->userId}"),
         ];
     }
 
@@ -53,6 +56,8 @@ class SyncBatchCompletedEvent implements ShouldBroadcast
     {
         return [
             'batch_id' => $this->batchId,
+            'tenant_id' => $this->tenantId,
+            'user_id' => $this->userId,
             'status' => 'completed',
             'results' => $this->results,
         ];

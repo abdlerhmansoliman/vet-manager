@@ -11,10 +11,12 @@ use App\Models\ClinicalCase;
 use App\Models\DoseAdministration;
 use App\Models\InventoryProduct;
 use App\Models\User;
+use App\Models\Visit;
 use App\Services\Inventory\BatchDeductionService;
 use App\Transformers\DoseAdministrationTransformer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class CaseDoseAdministrationController extends Controller
 {
@@ -34,10 +36,21 @@ class CaseDoseAdministrationController extends Controller
         $doseAmount = number_format((float) $request->input('dose_amount_base_units'), 4, '.', '');
         $routeAdministered = $request->input('route_administered');
         $clinicalNotes = $request->input('clinical_notes');
+        $visitId = $request->input('visit_id');
+
+        if ($visitId) {
+            $visit = Visit::query()->find($visitId);
+            if ($visit && $visit->is_signed) {
+                throw ValidationException::withMessages([
+                    'visit_id' => 'Clinical visit is signed and locked (is_signed=true). Medication doses cannot be added to a signed visit.',
+                ]);
+            }
+        }
 
         $result = DB::connection('tenant')->transaction(function () use (
             $case,
             $actor,
+            $visitId,
             $productId,
             $doseAmount,
             $routeAdministered,
@@ -50,6 +63,7 @@ class CaseDoseAdministrationController extends Controller
             // 1. Create the DoseAdministration record linking encounter, patient, product, and clinician
             $doseAdministration = DoseAdministration::query()->create([
                 'case_id' => $case->id,
+                'visit_id' => $visitId,
                 'patient_id' => $case->patient_id,
                 'product_id' => $product->id,
                 'administered_by_user_id' => $actor->id,

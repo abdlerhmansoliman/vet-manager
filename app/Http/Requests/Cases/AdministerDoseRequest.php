@@ -20,6 +20,7 @@ class AdministerDoseRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'visit_id' => ['nullable', 'string', 'uuid', 'exists:tenant.visits,id'],
             'product_id' => ['required', 'string', 'uuid', 'exists:tenant.inventory_products,id'],
             'dose_amount_base_units' => ['required', 'numeric', 'min:0.0001'],
             'route_administered' => ['nullable', 'string', 'max:32'],

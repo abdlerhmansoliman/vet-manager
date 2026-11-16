@@ -25,7 +25,6 @@ class UpdateVisitRequest extends FormRequest
             'status' => ['nullable', 'string', 'max:32'],
             'reason_for_visit' => ['nullable', 'string', 'max:5000'],
             'is_signed' => ['nullable', 'boolean'],
-            'signed_by' => ['nullable', 'string', 'max:191'],
         ];
     }
 
