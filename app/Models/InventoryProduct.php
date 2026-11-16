@@ -34,6 +34,7 @@ class InventoryProduct extends Model
         'reorder_threshold',
         'package_description',
         'packaging_factor',
+        'reconciliation_deficit',
     ];
 
     /**
@@ -47,6 +48,7 @@ class InventoryProduct extends Model
             'is_controlled' => 'boolean',
             'reorder_threshold' => 'string',
             'packaging_factor' => 'string',
+            'reconciliation_deficit' => 'string',
         ];
     }
 
@@ -82,24 +84,28 @@ class InventoryProduct extends Model
      */
     public function calculateTotalStock(): string
     {
+        $total = '0.0000';
+
         // 1. Primary: Sum batch balances if batches exist with current_base_balance tracked
         if ($this->batches()->whereNotNull('current_base_balance')->exists()) {
-            $total = '0.0000';
             foreach ($this->batches()->where('current_base_balance', '>', 0)->get() as $batch) {
                 $total = bcadd($total, (string) $batch->current_base_balance, 4);
             }
+        } else {
+            // 2. Fallback: Sum physical containers for legacy records
+            $containers = $this->containers()
+                ->whereIn('status', [ContainerStatus::Open, ContainerStatus::Sealed])
+                ->get();
 
-            return $total;
+            foreach ($containers as $container) {
+                $total = bcadd($total, (string) $container->current_base_balance, 4);
+            }
         }
 
-        // 2. Fallback: Sum physical containers for legacy records
-        $containers = $this->containers()
-            ->whereIn('status', [ContainerStatus::Open, ContainerStatus::Sealed])
-            ->get();
-
-        $total = '0.0000';
-        foreach ($containers as $container) {
-            $total = bcadd($total, (string) $container->current_base_balance, 4);
+        // 3. Deduct any recorded offline reconciliation deficits
+        $deficit = (string) ($this->reconciliation_deficit ?? '0.0000');
+        if (bccomp($deficit, '0.0000', 4) > 0) {
+            $total = bcsub($total, $deficit, 4);
         }
 
         return $total;

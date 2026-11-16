@@ -10,7 +10,9 @@ use App\Models\InventoryContainer;
 use App\Models\InventoryMovementLedger;
 use App\Models\InventoryProduct;
 use App\Models\User;
+use App\ValueObjects\FractionalQuantity;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class InventoryDeductionService
@@ -18,7 +20,14 @@ class InventoryDeductionService
     /**
      * Execute a high-precision fractional inventory deduction using FEFO and open-container priority.
      *
-     * @return array{product: InventoryProduct, total_deducted: string, remaining_stock: string, movements: list<InventoryMovementLedger>}
+     * @return array{
+     *     product: InventoryProduct,
+     *     total_deducted: string,
+     *     remaining_stock: string,
+     *     movements: list<InventoryMovementLedger>,
+     *     operation_id: string,
+     *     replayed: bool
+     * }
      *
      * @throws ValidationException
      */
@@ -32,16 +41,11 @@ class InventoryDeductionService
         ?string $idempotencyKey = null,
         bool $allowNegativeBalance = false
     ): array {
-        // Enforce BCMath scale 4
-        $requiredQuantity = number_format((float) $requiredQuantity, 4, '.', '');
+        // Enforce strict scale-4 BCMath via FractionalQuantity Value Object
+        $quantityVO = FractionalQuantity::fromString($requiredQuantity, 'quantity');
+        $requiredQuantityStr = $quantityVO->value();
 
-        if (bccomp($requiredQuantity, '0.0000', 4) <= 0) {
-            throw ValidationException::withMessages([
-                'quantity' => ['Deduction quantity must be greater than zero.'],
-            ]);
-        }
-
-        // Regulatory Compliance: Enforce witness for controlled pharmaceuticals
+        // Regulatory Compliance: Enforce witness for controlled pharmaceuticals if defined
         if ($product->is_controlled) {
             if (! $witness instanceof User) {
                 throw ValidationException::withMessages([
@@ -58,7 +62,8 @@ class InventoryDeductionService
 
         return DB::connection('tenant')->transaction(function () use (
             $product,
-            $requiredQuantity,
+            $quantityVO,
+            $requiredQuantityStr,
             $actor,
             $movementType,
             $witness,
@@ -66,166 +71,224 @@ class InventoryDeductionService
             $idempotencyKey,
             $allowNegativeBalance
         ): array {
-            // Lock product row to prevent race conditions
+            // Lock product row to prevent concurrent race conditions
             $lockedProduct = InventoryProduct::query()
                 ->where('id', $product->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $totalAvailable = $lockedProduct->calculateTotalStock();
+            // 1. Idempotency replay check
+            if ($idempotencyKey !== null && $idempotencyKey !== '') {
+                $existingMovements = InventoryMovementLedger::query()
+                    ->where('product_id', $lockedProduct->id)
+                    ->where('idempotency_key', $idempotencyKey)
+                    ->orderBy('created_at', 'asc')
+                    ->get();
 
-            if (bccomp($totalAvailable, $requiredQuantity, 4) < 0 && ! $allowNegativeBalance) {
-                throw ValidationException::withMessages([
-                    'quantity' => [
-                        "Insufficient stock for '{$lockedProduct->name}'. Available: {$totalAvailable} {$lockedProduct->base_unit->value}, Requested: {$requiredQuantity} {$lockedProduct->base_unit->value}.",
-                    ],
-                ]);
+                if ($existingMovements->isNotEmpty()) {
+                    return [
+                        'product' => $lockedProduct,
+                        'total_deducted' => $requiredQuantityStr,
+                        'remaining_stock' => $lockedProduct->calculateTotalStock(),
+                        'movements' => $existingMovements->all(),
+                        'operation_id' => $existingMovements->first()->operation_id ?? (string) Str::uuid(),
+                        'replayed' => true,
+                    ];
+                }
             }
 
-            $remainingToDeduct = $requiredQuantity;
-            $movements = [];
+            $operationId = (string) Str::uuid();
+            $now = now();
+            $today = $now->toDateString();
 
-            // ─── Step 1: Open Container Priority (FEFO) ───
+            // 2. Fetch unexpired candidate containers (FEFO: earliest expiration first)
+            // Query open containers (already unsealed)
             $openContainers = InventoryContainer::query()
                 ->join('inventory_batches', 'inventory_containers.batch_id', '=', 'inventory_batches.id')
                 ->where('inventory_containers.product_id', $lockedProduct->id)
                 ->where('inventory_containers.status', ContainerStatus::Open)
                 ->where('inventory_containers.current_base_balance', '>', 0)
-                ->orderBy('inventory_batches.expiration_date', 'asc')
+                ->where(function ($query) use ($today) {
+                    $query->whereNull('inventory_batches.expiration_date')
+                        ->orWhere('inventory_batches.expiration_date', '>=', $today);
+                })
+                ->orderByRaw('inventory_batches.expiration_date IS NULL ASC, inventory_batches.expiration_date ASC')
+                ->orderBy('inventory_containers.opened_at', 'asc')
                 ->select('inventory_containers.*')
                 ->lockForUpdate()
                 ->get();
 
-            foreach ($openContainers as $container) {
-                if (bccomp($remainingToDeduct, '0.0000', 4) <= 0) {
-                    break;
+            // Query sealed containers (unopened)
+            $sealedContainers = InventoryContainer::query()
+                ->join('inventory_batches', 'inventory_containers.batch_id', '=', 'inventory_batches.id')
+                ->where('inventory_containers.product_id', $lockedProduct->id)
+                ->where('inventory_containers.status', ContainerStatus::Sealed)
+                ->where('inventory_containers.current_base_balance', '>', 0)
+                ->where(function ($query) use ($today) {
+                    $query->whereNull('inventory_batches.expiration_date')
+                        ->orWhere('inventory_batches.expiration_date', '>=', $today);
+                })
+                ->orderByRaw('inventory_batches.expiration_date IS NULL ASC, inventory_batches.expiration_date ASC')
+                ->orderBy('inventory_containers.id', 'asc')
+                ->select('inventory_containers.*')
+                ->lockForUpdate()
+                ->get();
+
+            // Calculate total unexpired stock available across candidates
+            $totalAvailableVO = FractionalQuantity::zero();
+            foreach ($openContainers as $c) {
+                $totalAvailableVO = $totalAvailableVO->add((string) $c->current_base_balance);
+            }
+            foreach ($sealedContainers as $c) {
+                $totalAvailableVO = $totalAvailableVO->add((string) $c->current_base_balance);
+            }
+
+            if (! $allowNegativeBalance && $totalAvailableVO->comp($quantityVO) < 0) {
+                throw ValidationException::withMessages([
+                    'quantity' => [
+                        "Insufficient unexpired stock for '{$lockedProduct->name}'. Available: {$totalAvailableVO->value()} {$lockedProduct->base_unit->value}, Requested: {$requiredQuantityStr} {$lockedProduct->base_unit->value}.",
+                    ],
+                ]);
+            }
+
+            $remainingToDeductVO = $quantityVO;
+            $movements = [];
+            $initialProductStock = $lockedProduct->calculateTotalStock();
+            $runningProductBalance = $initialProductStock;
+
+            // Helper closure to deduct from a single container
+            $deductFromContainer = function (InventoryContainer $container, bool $isSealed) use (
+                &$remainingToDeductVO,
+                &$movements,
+                &$runningProductBalance,
+                $lockedProduct,
+                $movementType,
+                $reason,
+                $witness,
+                $actor,
+                $idempotencyKey,
+                $operationId,
+                $now
+            ): void {
+                if ($remainingToDeductVO->isZero()) {
+                    return;
                 }
 
-                $deductFromThis = bccomp((string) $container->current_base_balance, $remainingToDeduct, 4) >= 0
-                    ? $remainingToDeduct
-                    : (string) $container->current_base_balance;
+                $containerBalanceVO = FractionalQuantity::fromRaw((string) $container->current_base_balance);
 
-                $newBalance = bcsub((string) $container->current_base_balance, $deductFromThis, 4);
-                $remainingToDeduct = bcsub($remainingToDeduct, $deductFromThis, 4);
+                // Unseal if opening a sealed container
+                if ($isSealed) {
+                    $container->status = ContainerStatus::Open;
+                    $container->opened_at = $now;
+                    $container->opened_by_user_id = $actor->id;
+                }
 
-                $container->current_base_balance = $newBalance;
-                if (bccomp($newBalance, '0.0000', 4) === 0) {
+                // Determine allocation quantity
+                if ($containerBalanceVO->comp($remainingToDeductVO) >= 0) {
+                    $deductFromThisVO = $remainingToDeductVO;
+                    $remainingToDeductVO = FractionalQuantity::zero();
+                } else {
+                    $deductFromThisVO = $containerBalanceVO;
+                    $remainingToDeductVO = $remainingToDeductVO->sub($containerBalanceVO);
+                }
+
+                $newBalanceVO = $containerBalanceVO->sub($deductFromThisVO);
+                $container->current_base_balance = $newBalanceVO->value();
+
+                if ($newBalanceVO->isZero()) {
                     $container->status = ContainerStatus::Depleted;
-                    $container->depleted_at = now();
+                    $container->depleted_at = $now;
                 }
                 $container->save();
 
+                // Update batch current_base_balance if present
                 $batch = $container->batch;
                 if ($batch && $batch->current_base_balance !== null && bccomp((string) $batch->current_base_balance, '0.0000', 4) > 0) {
-                    $batchNew = bcsub((string) $batch->current_base_balance, $deductFromThis, 4);
+                    $batchNew = bcsub((string) $batch->current_base_balance, $deductFromThisVO->value(), 4);
                     $batch->current_base_balance = bccomp($batchNew, '0.0000', 4) < 0 ? '0.0000' : $batchNew;
                     $batch->save();
                 }
 
+                $runningProductBalance = bcsub($runningProductBalance, $deductFromThisVO->value(), 4);
+
                 $movements[] = InventoryMovementLedger::query()->create([
                     'idempotency_key' => $idempotencyKey,
+                    'operation_id' => $operationId,
                     'product_id' => $lockedProduct->id,
                     'batch_id' => $container->batch_id,
                     'container_id' => $container->id,
                     'movement_type' => $movementType,
-                    'quantity' => '-'.$deductFromThis,
-                    'balance_after' => $newBalance,
+                    'quantity' => '-'.$deductFromThisVO->value(),
+                    'balance_after' => $newBalanceVO->value(),
+                    'product_balance_after' => $runningProductBalance,
                     'reason' => $reason,
                     'witnessed_by_user_id' => $witness?->id,
                     'recorded_by_user_id' => $actor->id,
-                    'created_at' => now(),
+                    'created_at' => $now,
+                ]);
+            };
+
+            // ─── Step 1: Deduct from open containers (FEFO) ───
+            foreach ($openContainers as $container) {
+                if ($remainingToDeductVO->isZero()) {
+                    break;
+                }
+                $deductFromContainer($container, false);
+            }
+
+            // ─── Step 2: Deduct from sealed containers (FEFO) ───
+            if ($remainingToDeductVO->isPositive()) {
+                foreach ($sealedContainers as $container) {
+                    if ($remainingToDeductVO->isZero()) {
+                        break;
+                    }
+                    $deductFromContainer($container, true);
+                }
+            }
+
+            // ─── Step 3: All-or-nothing guard ───
+            if (! $allowNegativeBalance && $remainingToDeductVO->isPositive()) {
+                throw ValidationException::withMessages([
+                    'quantity' => [
+                        "Insufficient unexpired stock to satisfy full deduction for '{$lockedProduct->name}'. Remaining unallocated: {$remainingToDeductVO->value()} {$lockedProduct->base_unit->value}.",
+                    ],
                 ]);
             }
 
-            // ─── Step 2: Unsealed / Sealed Containers (FEFO) ───
-            if (bccomp($remainingToDeduct, '0.0000', 4) > 0) {
-                $sealedContainers = InventoryContainer::query()
-                    ->join('inventory_batches', 'inventory_containers.batch_id', '=', 'inventory_batches.id')
-                    ->where('inventory_containers.product_id', $lockedProduct->id)
-                    ->where('inventory_containers.status', ContainerStatus::Sealed)
-                    ->orderBy('inventory_batches.expiration_date', 'asc')
-                    ->select('inventory_containers.*')
-                    ->lockForUpdate()
-                    ->get();
+            // ─── Step 4: Offline Reconciliation Deficit Handling ───
+            if ($allowNegativeBalance && $remainingToDeductVO->isPositive()) {
+                $deficitToAdd = $remainingToDeductVO->value();
+                $lockedProduct->reconciliation_deficit = bcadd((string) ($lockedProduct->reconciliation_deficit ?? '0.0000'), $deficitToAdd, 4);
+                $lockedProduct->save();
 
-                foreach ($sealedContainers as $container) {
-                    if (bccomp($remainingToDeduct, '0.0000', 4) <= 0) {
-                        break;
-                    }
+                $runningProductBalance = bcsub($runningProductBalance, $deficitToAdd, 4);
 
-                    // Break the seal and open container
-                    $container->status = ContainerStatus::Open;
-                    $container->opened_at = now();
-                    $container->opened_by_user_id = $actor->id;
-
-                    $deductFromThis = bccomp((string) $container->current_base_balance, $remainingToDeduct, 4) >= 0
-                        ? $remainingToDeduct
-                        : (string) $container->current_base_balance;
-
-                    $newBalance = bcsub((string) $container->current_base_balance, $deductFromThis, 4);
-                    $remainingToDeduct = bcsub($remainingToDeduct, $deductFromThis, 4);
-
-                    $container->current_base_balance = $newBalance;
-                    if (bccomp($newBalance, '0.0000', 4) === 0) {
-                        $container->status = ContainerStatus::Depleted;
-                        $container->depleted_at = now();
-                    }
-                    $container->save();
-
-                    $batch = $container->batch;
-                    if ($batch && $batch->current_base_balance !== null && bccomp((string) $batch->current_base_balance, '0.0000', 4) > 0) {
-                        $batchNew = bcsub((string) $batch->current_base_balance, $deductFromThis, 4);
-                        $batch->current_base_balance = bccomp($batchNew, '0.0000', 4) < 0 ? '0.0000' : $batchNew;
-                        $batch->save();
-                    }
-
-                    $movements[] = InventoryMovementLedger::query()->create([
-                        'idempotency_key' => $idempotencyKey,
-                        'product_id' => $lockedProduct->id,
-                        'batch_id' => $container->batch_id,
-                        'container_id' => $container->id,
-                        'movement_type' => $movementType,
-                        'quantity' => '-'.$deductFromThis,
-                        'balance_after' => $newBalance,
-                        'reason' => $reason,
-                        'witnessed_by_user_id' => $witness?->id,
-                        'recorded_by_user_id' => $actor->id,
-                        'created_at' => now(),
-                    ]);
-                }
-            }
-
-            if ($allowNegativeBalance && bccomp($remainingToDeduct, '0.0000', 4) > 0) {
-                $lastContainer = $openContainers->last() ?? ($sealedContainers ?? collect())->last() ?? InventoryContainer::query()->where('product_id', $lockedProduct->id)->first();
-                if ($lastContainer instanceof InventoryContainer) {
-                    $newBalance = bcsub((string) $lastContainer->current_base_balance, $remainingToDeduct, 4);
-                    $lastContainer->current_base_balance = $newBalance;
-                    $lastContainer->status = ContainerStatus::Open;
-                    $lastContainer->save();
-
-                    $movements[] = InventoryMovementLedger::query()->create([
-                        'idempotency_key' => $idempotencyKey,
-                        'product_id' => $lockedProduct->id,
-                        'batch_id' => $lastContainer->batch_id,
-                        'container_id' => $lastContainer->id,
-                        'movement_type' => $movementType,
-                        'quantity' => '-'.$remainingToDeduct,
-                        'balance_after' => $newBalance,
-                        'reason' => ($reason ?? 'Clinical dose deduction').' (Offline reconciliation deficit)',
-                        'witnessed_by_user_id' => $witness?->id,
-                        'recorded_by_user_id' => $actor->id,
-                        'created_at' => now(),
-                    ]);
-                }
+                $movements[] = InventoryMovementLedger::query()->create([
+                    'idempotency_key' => $idempotencyKey,
+                    'operation_id' => $operationId,
+                    'product_id' => $lockedProduct->id,
+                    'batch_id' => null,
+                    'container_id' => null,
+                    'movement_type' => $movementType,
+                    'quantity' => '-'.$deficitToAdd,
+                    'balance_after' => $runningProductBalance,
+                    'product_balance_after' => $runningProductBalance,
+                    'reason' => ($reason ?? 'Clinical dose deduction').' (Offline reconciliation deficit)',
+                    'witnessed_by_user_id' => $witness?->id,
+                    'recorded_by_user_id' => $actor->id,
+                    'created_at' => $now,
+                ]);
             }
 
             $remainingStock = $lockedProduct->calculateTotalStock();
 
             return [
                 'product' => $lockedProduct,
-                'total_deducted' => $requiredQuantity,
+                'total_deducted' => $requiredQuantityStr,
                 'remaining_stock' => $remainingStock,
                 'movements' => $movements,
+                'operation_id' => $operationId,
+                'replayed' => false,
             ];
         });
     }

@@ -26,12 +26,14 @@ class InventoryMovementLedger extends Model
     protected $fillable = [
         'id',
         'idempotency_key',
+        'operation_id',
         'product_id',
         'batch_id',
         'container_id',
         'movement_type',
         'quantity',
         'balance_after',
+        'product_balance_after',
         'reason',
         'witnessed_by_user_id',
         'recorded_by_user_id',
@@ -47,8 +49,22 @@ class InventoryMovementLedger extends Model
             'movement_type' => StockMovementType::class,
             'quantity' => 'string',
             'balance_after' => 'string',
+            'product_balance_after' => 'string',
             'created_at' => 'datetime',
         ];
+    }
+
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        static::updating(function () {
+            throw new \RuntimeException('Inventory movement ledger records are strictly immutable and cannot be updated.');
+        });
+
+        static::deleting(function () {
+            throw new \RuntimeException('Inventory movement ledger records are strictly immutable and cannot be deleted.');
+        });
     }
 
     public function product(): BelongsTo
