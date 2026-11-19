@@ -43,6 +43,7 @@ class SyncController extends Controller
         $cases = $fetchDeltas('cases');
         $visits = DB::getSchemaBuilder()->hasTable('visits') ? $fetchDeltas('visits') : collect();
         $notesRaw = $fetchDeltas('clinical_progress_notes');
+        $doses = DB::getSchemaBuilder()->hasTable('dose_administrations') ? $fetchDeltas('dose_administrations') : collect();
         $products = $fetchDeltas('inventory_products');
         $batches = $fetchDeltas('inventory_batches');
         $containers = $fetchDeltas('inventory_containers');
@@ -53,6 +54,7 @@ class SyncController extends Controller
             || $cases->count() >= $limit
             || $visits->count() >= $limit
             || $notesRaw->count() >= $limit
+            || $doses->count() >= $limit
             || $products->count() >= $limit
             || $batches->count() >= $limit
             || $containers->count() >= $limit;
@@ -67,7 +69,7 @@ class SyncController extends Controller
         });
 
         $maxUpdatedAt = null;
-        $collections = [$clients, $patients, $species, $cases, $visits, $notesRaw, $products, $batches, $containers];
+        $collections = [$clients, $patients, $species, $cases, $visits, $notesRaw, $doses, $products, $batches, $containers];
 
         foreach ($collections as $collection) {
             if ($collection->isNotEmpty()) {
@@ -95,6 +97,7 @@ class SyncController extends Controller
                 'cases' => $cases,
                 'visits' => $visits,
                 'progress_notes' => $notes,
+                'dose_administrations' => $doses,
                 'inventory_products' => $products,
                 'inventory_batches' => $batches,
                 'inventory_containers' => $containers,

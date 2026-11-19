@@ -1008,4 +1008,53 @@ class SyncTest extends TestCase
 
         $tenantManager->reset();
     }
+
+    public function test_pull_includes_dose_administrations_in_deltas(): void
+    {
+        $tenantManager = app(TenantManager::class);
+        $tenantManager->switch($this->tenant);
+
+        $client = Client::factory()->create();
+        $patient = Patient::factory()->create(['client_id' => $client->id]);
+        $case = ClinicalCase::factory()->create([
+            'patient_id' => $patient->id,
+            'primary_veterinarian_id' => $this->veterinarian->id,
+        ]);
+        $product = \App\Models\InventoryProduct::query()->create([
+            'id' => (string) Str::uuid(),
+            'name' => 'Diazepam 5mg/ml',
+            'sku' => 'DIAZ-'.uniqid(),
+            'base_unit' => \App\Enums\MeasurementBaseUnit::Ml,
+            'is_controlled' => false,
+        ]);
+
+        $doseId = (string) Str::uuid();
+        DB::table('dose_administrations')->insert([
+            'id' => $doseId,
+            'case_id' => $case->id,
+            'patient_id' => $patient->id,
+            'product_id' => $product->id,
+            'administered_by_user_id' => $this->veterinarian->id,
+            'dose_amount_base_units' => '2.5000',
+            'route_administered' => 'IV',
+            'clinical_notes' => 'Administered via IV push',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $tenantManager->reset();
+
+        $response = $this->withHeader('X-Tenant-ID', 'alphavet')
+            ->withHeader('Authorization', "Bearer {$this->token}")
+            ->getJson('/api/v1/sync/pull');
+
+        $response->assertStatus(200);
+        $doses = collect($response->json('deltas.dose_administrations'));
+        $matched = $doses->firstWhere('id', $doseId);
+
+        $this->assertNotNull($matched);
+        $this->assertEquals($case->id, $matched['case_id']);
+        $this->assertEquals('2.5000', $matched['dose_amount_base_units']);
+        $this->assertEquals('IV', $matched['route_administered']);
+    }
 }
