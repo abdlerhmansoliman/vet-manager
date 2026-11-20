@@ -1095,7 +1095,10 @@ class ProcessSyncMutationsJob implements ShouldQueue
         }
         $productId = $payload['product_id'] ?? null;
         $administeredBy = $payload['administered_by_user_id'] ?? $payload['vet_id'] ?? $fallbackVetId;
-        $doseAmount = (string) ($payload['dose_amount_base_units'] ?? $payload['dose_amount'] ?? '1');
+        $doseAmount = (string) ($payload['dose_amount_base_units'] ?? $payload['dose_amount'] ?? $payload['dose_quantity'] ?? '');
+        if ($doseAmount === '') {
+            throw new \InvalidArgumentException("Dose administration {$doseId} rejected: dose amount / quantity is required.");
+        }
         $route = $payload['route_administered'] ?? null;
         $notes = $payload['clinical_notes'] ?? null;
 
