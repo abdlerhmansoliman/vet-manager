@@ -11,9 +11,10 @@ const props = defineProps({
 
 const form = useForm({
     name: props.client.name || '',
-    phone: props.client.phone || '',
+    client_type: props.client.client_type || 'individual',
+    phone: props.client.phone || props.client.phone_primary || '',
     email: props.client.email || '',
-    address: props.client.address || '',
+    address: props.client.address || props.client.physical_address || '',
     tax_number: props.client.tax_number || '',
     notes: props.client.notes || '',
 });

@@ -18,6 +18,16 @@ class OpenCaseRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (! $this->has('primary_veterinarian_id') || empty($this->input('primary_veterinarian_id'))) {
+            $userId = $this->user()?->id;
+            if ($userId) {
+                $this->merge(['primary_veterinarian_id' => (string) $userId]);
+            }
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */

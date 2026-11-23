@@ -45,10 +45,17 @@ class UpdatePatientAction
             'history' => $dto->history,
             'notes' => $dto->notes,
             'status' => $dto->status,
-            'allergies' => $dto->allergies,
         ];
 
-        if ($dto->currentWeightKg !== null && $dto->currentWeightKg !== (string) $patient->current_weight_kg) {
+        if ($dto->allergiesProvided) {
+            $changes['allergies'] = $dto->allergies;
+        }
+
+        if ($dto->clientId !== null) {
+            $changes['client_id'] = $dto->clientId;
+        }
+
+        if ($dto->currentWeightKg !== null && ($patient->current_weight_kg === null || bccomp((string) $dto->currentWeightKg, (string) $patient->current_weight_kg, 4) !== 0)) {
             $changes['current_weight_kg'] = $dto->currentWeightKg;
             $changes['weight_recorded_at'] = now();
         }

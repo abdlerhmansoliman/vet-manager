@@ -26,6 +26,8 @@ final readonly class UpdatePatientDTO
         public ?string $notes = null,
         /** @var list<string>|null */
         public ?array $allergies = null,
+        public ?string $clientId = null,
+        public bool $allergiesProvided = false,
     ) {}
 
     /**
@@ -57,6 +59,8 @@ final readonly class UpdatePatientDTO
             history: isset($data['history']) ? (string) $data['history'] : null,
             notes: isset($data['notes']) ? (string) $data['notes'] : null,
             allergies: isset($data['allergies']) ? (array) $data['allergies'] : null,
+            clientId: isset($data['client_id']) ? (string) $data['client_id'] : null,
+            allergiesProvided: array_key_exists('allergies', $data),
         );
     }
 }

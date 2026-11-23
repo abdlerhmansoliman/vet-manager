@@ -661,6 +661,38 @@ Allows legal corrective addenda without modifying original clinical notes.
 
 ---
 
+### 4.11 Export Official Single Visit Clinical Report (PDF)
+- **Method**: `GET`
+- **Path**: `/api/v1/visits/{visitId}/pdf`
+- **Query Parameters**:
+  - `download` (optional, boolean: `1` or `0`): Forces attachment download disposition instead of inline stream.
+- **Headers**:
+  - `Authorization: Bearer <token>`
+  - `X-Tenant-ID: <tenant_id>`
+- **Response `200 OK`**:
+  - `Content-Type: application/pdf`
+  - `Content-Disposition: inline|attachment; filename="clinical-visit-{visitId}-{patientName}.pdf"`
+  - `Cache-Control: no-store, private, max-age=0`
+  - Body: Binary stream of the official single-visit encounter PDF report.
+
+---
+
+### 4.12 Export Comprehensive Clinical Case Dossier (PDF)
+- **Method**: `GET`
+- **Path**: `/api/v1/cases/{caseId}/pdf`
+- **Query Parameters**:
+  - `download` (optional, boolean: `1` or `0`): Forces attachment download disposition instead of inline stream.
+- **Headers**:
+  - `Authorization: Bearer <token>`
+  - `X-Tenant-ID: <tenant_id>`
+- **Response `200 OK`**:
+  - `Content-Type: application/pdf`
+  - `Content-Disposition: inline|attachment; filename="clinical-case-{caseNumber}-{patientName}.pdf"`
+  - `Cache-Control: no-store, private, max-age=0`
+  - Body: Binary stream of the comprehensive multi-visit medical case dossier PDF report.
+
+---
+
 ## 5. Active Medications & High-Precision Dose Administration
 
 ### 5.1 Prescribe Active Medication

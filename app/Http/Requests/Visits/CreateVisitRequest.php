@@ -20,6 +20,7 @@ class CreateVisitRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'case_id' => ['nullable', 'string', 'uuid', 'exists:tenant.cases,id'],
             'id' => ['nullable', 'string', 'uuid'],
             'title' => ['required', 'string', 'max:191'],
             'visit_type' => ['nullable', 'string', 'max:64'],

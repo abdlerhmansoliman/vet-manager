@@ -24,6 +24,7 @@ class UpdateVisitRequest extends FormRequest
             'visit_type' => ['nullable', 'string', 'max:64'],
             'status' => ['nullable', 'string', 'max:32'],
             'reason_for_visit' => ['nullable', 'string', 'max:5000'],
+            'visit_date' => ['nullable', 'date'],
             'is_signed' => ['nullable', 'boolean'],
         ];
     }

@@ -17,6 +17,22 @@ class CreatePatientRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('high_risk_allergies') && ! $this->has('allergies')) {
+            $input = $this->input('high_risk_allergies');
+            if (is_string($input)) {
+                $allergies = array_values(array_filter(array_map('trim', explode(',', $input))));
+                $this->merge(['allergies' => $allergies]);
+            } elseif (is_array($input)) {
+                $this->merge(['allergies' => array_values(array_filter($input))]);
+            }
+        } elseif ($this->has('allergies') && is_string($this->input('allergies'))) {
+            $allergies = array_values(array_filter(array_map('trim', explode(',', (string) $this->input('allergies')))));
+            $this->merge(['allergies' => $allergies]);
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */

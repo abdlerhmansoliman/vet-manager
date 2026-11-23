@@ -18,7 +18,7 @@ const form = useForm({
     name_or_tag: props.patient.name_or_tag || '',
     species: props.patient.species || 'Canine',
     breed: props.patient.breed || '',
-    gender: props.patient.gender || 'male',
+    gender: props.patient.gender || 'unknown',
     date_of_birth: props.patient.date_of_birth ? props.patient.date_of_birth.substring(0, 10) : '',
     current_weight_kg: props.patient.current_weight_kg || '',
     microchip_number: props.patient.microchip_number || '',
@@ -59,7 +59,7 @@ const submit = () => {
                             class="mt-1.5 w-full rounded-xl border border-stone-300 px-3.5 py-2.5 text-xs sm:text-sm text-stone-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                         >
                             <option v-for="c in clients" :key="c.id" :value="c.id">
-                                {{ c.name }} ({{ c.phone || 'No phone' }})
+                                {{ c.name }} ({{ c.phone_primary || c.phone || 'No phone' }})
                             </option>
                         </select>
                     </div>
@@ -117,9 +117,9 @@ const submit = () => {
                                 v-model="form.gender"
                                 class="mt-1.5 w-full rounded-xl border border-stone-300 px-3.5 py-2.5 text-xs sm:text-sm text-stone-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                             >
-                                <option value="male">Male</option>
-                                <option value="female">Female</option>
+                                <option value="intact_male">Intact Male</option>
                                 <option value="neutered_male">Neutered Male</option>
+                                <option value="intact_female">Intact Female</option>
                                 <option value="spayed_female">Spayed Female</option>
                                 <option value="unknown">Unknown</option>
                             </select>

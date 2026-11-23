@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Portal;
 
+use App\Actions\Visits\CreateVisitAction;
+use App\Actions\Visits\UpdateVisitAction;
 use App\Enums\StockMovementType;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Visits\CreateVisitRequest;
+use App\Http\Requests\Visits\UpdateVisitRequest;
 use App\Models\ClinicalCase;
 use App\Models\ClinicalProgressNote;
 use App\Models\DoseAdministration;
@@ -16,7 +20,6 @@ use App\Services\Media\MediaService;
 use App\Services\Tenancy\TenantManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -50,27 +53,11 @@ class VisitController extends Controller
     /**
      * Store newly created clinical visit.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(CreateVisitRequest $request, CreateVisitAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'case_id' => ['required', 'exists:cases,id'],
-            'title' => ['required', 'string', 'max:255'],
-            'visit_type' => ['required', 'string', 'max:100'],
-            'reason_for_visit' => ['nullable', 'string', 'max:1000'],
-            'visit_date' => ['nullable', 'date'],
-        ]);
+        $case = ClinicalCase::query()->findOrFail((string) $request->validated('case_id'));
 
-        $case = ClinicalCase::query()->findOrFail($validated['case_id']);
-
-        $visit = Visit::query()->create([
-            'case_id' => $case->id,
-            'title' => $validated['title'],
-            'visit_type' => $validated['visit_type'],
-            'status' => 'in_progress',
-            'is_signed' => false,
-            'reason_for_visit' => $validated['reason_for_visit'] ?? $case->chief_complaint,
-            'visit_date' => $validated['visit_date'] ?? now(),
-        ]);
+        $visit = $action->execute($case, $request->toDTO());
 
         return redirect()->route('portal.visits.show', $visit->id)->with(
             'success',
@@ -87,6 +74,10 @@ class VisitController extends Controller
         $visit->load([
             'case.patient.client',
             'case.primaryVeterinarian',
+            'case.diagnoses' => fn ($q) => $q->select(['id', 'case_id', 'diagnosis', 'status', 'created_at']),
+            'case.visits' => fn ($q) => $q->select(['id', 'case_id', 'title', 'visit_type', 'visit_date', 'status', 'is_signed', 'signed_at', 'signed_by', 'created_at'])
+                ->orderByDesc('visit_date')
+                ->limit(20),
             'progressNotes.veterinarian',
         ]);
 
@@ -98,6 +89,16 @@ class VisitController extends Controller
             ->where('case_id', $visit->case_id)
             ->latest()
             ->get();
+
+        // Patient historical weight readings for sparkline trend (latest 10 recorded notes with weight, oldest to newest)
+        $vitalHistory = ClinicalProgressNote::query()
+            ->whereHas('clinicalCase', fn ($q) => $q->where('patient_id', $visit->case->patient_id))
+            ->whereNotNull('weight_kg')
+            ->latest()
+            ->limit(10)
+            ->get(['id', 'weight_kg', 'created_at'])
+            ->reverse()
+            ->values();
 
         // Pharmacy products with stock available for dosing
         $pharmacyProducts = InventoryProduct::query()
@@ -118,7 +119,10 @@ class VisitController extends Controller
             'visit' => $visit,
             'case' => $visit->case,
             'patient' => $visit->case->patient,
+            'visits' => $visit->case->visits,
+            'diagnoses' => $visit->case->diagnoses ?? [],
             'latestNote' => $latestNote,
+            'vitalHistory' => $vitalHistory,
             'administeredDoses' => $doses,
             'mediaImages' => $mediaService->getImagesForModel($visit),
             'products' => $pharmacyProducts,
@@ -152,7 +156,7 @@ class VisitController extends Controller
         $noteData = [
             'clinical_case_id' => $visit->case_id,
             'visit_id' => $visit->id,
-            'vet_id' => Auth::guard('web')->id(),
+            'vet_id' => $request->user()?->id,
             'subjective_notes' => $validated['subjective'] ?? null,
             'objective_notes' => $validated['objective'] ?? null,
             'assessment_notes' => $validated['assessment'] ?? null,
@@ -203,7 +207,7 @@ class VisitController extends Controller
 
         $productId = (string) $validated['product_id'];
         $doseAmount = number_format((float) $validated['dose_amount_base_units'], 4, '.', '');
-        $actor = Auth::guard('web')->user();
+        $actor = $request->user();
 
         DB::connection('tenant')->transaction(function () use (
             $visit,
@@ -272,20 +276,20 @@ class VisitController extends Controller
     /**
      * Digitally sign and permanently lock the clinical visit record.
      */
-    public function sign(Visit $visit): RedirectResponse
+    public function sign(Visit $visit, Request $request): RedirectResponse
     {
         if ($visit->is_signed) {
             return back()->withErrors(['sign' => __('Visit is already signed and legally locked.')]);
         }
 
-        $actor = Auth::guard('web')->user();
+        $actor = $request->user();
         $now = now();
 
         DB::connection('tenant')->transaction(function () use ($visit, $actor, $now): void {
             $visit->update([
                 'is_signed' => true,
                 'signed_at' => $now,
-                'signed_by' => $actor->name,
+                'signed_by' => $actor?->name ?? 'Veterinarian',
                 'status' => 'completed',
             ]);
 
@@ -322,24 +326,11 @@ class VisitController extends Controller
     /**
      * Update visit metadata before signing.
      */
-    public function update(Visit $visit, Request $request): RedirectResponse
+    public function update(Visit $visit, UpdateVisitRequest $request, UpdateVisitAction $action): RedirectResponse
     {
-        if ($visit->is_signed) {
-            return redirect()->route('portal.visits.show', $visit->id)->withErrors([
-                'edit' => __('Cannot edit a signed and locked clinical visit.'),
-            ]);
-        }
+        $updated = $action->execute($visit, $request->toDTO(), $request->user());
 
-        $validated = $request->validate([
-            'title' => ['required', 'string', 'max:255'],
-            'visit_type' => ['required', 'string', 'max:100'],
-            'reason_for_visit' => ['nullable', 'string', 'max:1000'],
-            'visit_date' => ['required', 'date'],
-        ]);
-
-        $visit->update($validated);
-
-        return redirect()->route('portal.visits.show', $visit->id)->with(
+        return redirect()->route('portal.visits.show', $updated->id)->with(
             'success',
             __('Visit metadata updated successfully.')
         );

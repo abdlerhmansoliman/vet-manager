@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Portal;
 
-use App\Enums\PatientGender;
-use App\Enums\PatientStatus;
+use App\Actions\Patient\CreatePatientAction;
+use App\Actions\Patient\UpdatePatientAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Patient\CreatePatientRequest;
+use App\Http\Requests\Patient\UpdatePatientRequest;
 use App\Models\Client;
 use App\Models\Patient;
 use App\Services\Tenancy\TenantManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -65,7 +66,7 @@ class PatientController extends Controller
      */
     public function create(Request $request): Response
     {
-        $clients = Client::query()->orderBy('name')->get(['id', 'name', 'phone']);
+        $clients = Client::query()->orderBy('name')->get(['id', 'name', 'phone_primary']);
 
         return Inertia::render('Patients/Create', [
             'clients' => $clients,
@@ -75,46 +76,9 @@ class PatientController extends Controller
     /**
      * Store newly registered patient in tenant database.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(CreatePatientRequest $request, CreatePatientAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'client_id' => ['required', 'exists:clients,id'],
-            'name_or_tag' => ['required', 'string', 'max:255'],
-            'species' => ['required', 'string', 'max:100'],
-            'breed' => ['nullable', 'string', 'max:150'],
-            'gender' => ['required', Rule::enum(PatientGender::class)],
-            'age' => ['nullable', 'integer', 'min:0', 'max:100'],
-            'date_of_birth' => ['nullable', 'date'],
-            'microchip_number' => ['nullable', 'string', 'max:50'],
-            'current_weight_kg' => ['nullable', 'numeric', 'min:0'],
-            'high_risk_allergies' => ['nullable', 'string'],
-            'allergies' => ['nullable'],
-            'notes' => ['nullable', 'string'],
-        ]);
-
-        $allergyInput = $validated['high_risk_allergies'] ?? $validated['allergies'] ?? null;
-        $allergiesArray = null;
-        if (! empty($allergyInput)) {
-            $allergiesArray = is_array($allergyInput)
-                ? array_values(array_filter($allergyInput))
-                : array_values(array_filter(array_map('trim', explode(',', (string) $allergyInput))));
-        }
-
-        $patient = Patient::query()->create([
-            'client_id' => $validated['client_id'],
-            'name_or_tag' => $validated['name_or_tag'],
-            'species' => $validated['species'],
-            'breed' => $validated['breed'] ?? null,
-            'gender' => $validated['gender'],
-            'age' => $validated['age'] ?? null,
-            'date_of_birth' => $validated['date_of_birth'] ?? null,
-            'microchip_number' => $validated['microchip_number'] ?? null,
-            'current_weight_kg' => isset($validated['current_weight_kg']) ? (string) $validated['current_weight_kg'] : null,
-            'weight_recorded_at' => isset($validated['current_weight_kg']) ? now() : null,
-            'allergies' => $allergiesArray,
-            'notes' => $validated['notes'] ?? null,
-            'status' => PatientStatus::Active,
-        ]);
+        $patient = $action->execute($request->toDTO());
 
         return redirect()->route('portal.patients.show', $patient->id)->with(
             'success',
@@ -144,7 +108,7 @@ class PatientController extends Controller
      */
     public function edit(Patient $patient): Response
     {
-        $clients = Client::query()->orderBy('name')->get(['id', 'name', 'phone']);
+        $clients = Client::query()->orderBy('name')->get(['id', 'name', 'phone_primary']);
 
         return Inertia::render('Patients/Edit', [
             'patient' => $patient->load('client'),
@@ -155,54 +119,11 @@ class PatientController extends Controller
     /**
      * Update patient demographics, weight, microchip, high-risk allergies.
      */
-    public function update(Patient $patient, Request $request): RedirectResponse
+    public function update(Patient $patient, UpdatePatientRequest $request, UpdatePatientAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'client_id' => ['required', 'exists:clients,id'],
-            'name_or_tag' => ['required', 'string', 'max:255'],
-            'species' => ['required', 'string', 'max:100'],
-            'breed' => ['nullable', 'string', 'max:150'],
-            'gender' => ['required', Rule::enum(PatientGender::class)],
-            'age' => ['nullable', 'integer', 'min:0', 'max:100'],
-            'date_of_birth' => ['nullable', 'date'],
-            'microchip_number' => ['nullable', 'string', 'max:50'],
-            'current_weight_kg' => ['nullable', 'numeric', 'min:0'],
-            'status' => ['required', Rule::enum(PatientStatus::class)],
-            'high_risk_allergies' => ['nullable', 'string'],
-            'allergies' => ['nullable'],
-            'notes' => ['nullable', 'string'],
-        ]);
+        $updated = $action->execute($patient, $request->toDTO());
 
-        $allergyInput = $validated['high_risk_allergies'] ?? $validated['allergies'] ?? null;
-        $allergiesArray = null;
-        if (! empty($allergyInput)) {
-            $allergiesArray = is_array($allergyInput)
-                ? array_values(array_filter($allergyInput))
-                : array_values(array_filter(array_map('trim', explode(',', (string) $allergyInput))));
-        }
-
-        $updateData = [
-            'client_id' => $validated['client_id'],
-            'name_or_tag' => $validated['name_or_tag'],
-            'species' => $validated['species'],
-            'breed' => $validated['breed'] ?? null,
-            'gender' => $validated['gender'],
-            'age' => $validated['age'] ?? null,
-            'date_of_birth' => $validated['date_of_birth'] ?? null,
-            'microchip_number' => $validated['microchip_number'] ?? null,
-            'status' => $validated['status'],
-            'allergies' => $allergiesArray,
-            'notes' => $validated['notes'] ?? null,
-        ];
-
-        if (isset($validated['current_weight_kg']) && (string) $validated['current_weight_kg'] !== (string) $patient->current_weight_kg) {
-            $updateData['current_weight_kg'] = (string) $validated['current_weight_kg'];
-            $updateData['weight_recorded_at'] = now();
-        }
-
-        $patient->update($updateData);
-
-        return redirect()->route('portal.patients.show', $patient->id)->with(
+        return redirect()->route('portal.patients.show', $updated->id)->with(
             'success',
             __('Patient record updated successfully.')
         );

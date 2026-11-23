@@ -4,21 +4,17 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Portal;
 
-use App\Enums\ControlledSubstanceSchedule;
-use App\Enums\MeasurementBaseUnit;
-use App\Enums\StockMovementType;
+use App\Actions\Inventory\CreateProductAction;
+use App\Actions\Inventory\ReceiveStockAction;
+use App\Actions\Inventory\WasteStockAction;
 use App\Http\Controllers\Controller;
-use App\Models\InventoryBatch;
-use App\Models\InventoryMovementLedger;
+use App\Http\Requests\Inventory\CreateProductRequest;
+use App\Http\Requests\Inventory\ReceiveStockRequest;
+use App\Http\Requests\Inventory\WasteStockRequest;
 use App\Models\InventoryProduct;
-use App\Services\Inventory\BatchDeductionService;
 use App\Services\Tenancy\TenantManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -76,30 +72,9 @@ class InventoryController extends Controller
     /**
      * Store new inventory product.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(CreateProductRequest $request, CreateProductAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'sku' => ['required', 'string', 'max:100', 'unique:inventory_products,sku'],
-            'base_unit' => ['required', Rule::enum(MeasurementBaseUnit::class)],
-            'controlled_schedule' => ['required', Rule::enum(ControlledSubstanceSchedule::class)],
-            'reorder_threshold' => ['nullable', 'numeric', 'min:0'],
-            'package_description' => ['nullable', 'string', 'max:255'],
-            'packaging_factor' => ['nullable', 'numeric', 'min:1'],
-        ]);
-
-        $isControlled = ControlledSubstanceSchedule::from((string) $validated['controlled_schedule'])->isControlled();
-
-        $product = InventoryProduct::query()->create([
-            'name' => $validated['name'],
-            'sku' => $validated['sku'],
-            'base_unit' => $validated['base_unit'],
-            'is_controlled' => $isControlled,
-            'controlled_schedule' => $validated['controlled_schedule'],
-            'reorder_threshold' => isset($validated['reorder_threshold']) ? (string) $validated['reorder_threshold'] : '0.0000',
-            'package_description' => $validated['package_description'] ?? null,
-            'packaging_factor' => isset($validated['packaging_factor']) ? (string) $validated['packaging_factor'] : '1.0000',
-        ]);
+        $product = $action->execute($request->toDTO());
 
         return redirect()->route('portal.inventory.index')->with(
             'success',
@@ -124,45 +99,9 @@ class InventoryController extends Controller
     /**
      * Process stock intake and record batch & ledger entry.
      */
-    public function storeReceive(Request $request): RedirectResponse
+    public function storeReceive(ReceiveStockRequest $request, ReceiveStockAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'product_id' => ['required', 'exists:inventory_products,id'],
-            'batch_number' => ['required', 'string', 'max:100'],
-            'expiration_date' => ['required', 'date', 'after:today'],
-            'initial_base_quantity' => ['required', 'numeric', 'gt:0'],
-            'cost_per_base_unit' => ['nullable', 'numeric', 'min:0'],
-        ]);
-
-        $qty = number_format((float) $validated['initial_base_quantity'], 4, '.', '');
-        $cost = isset($validated['cost_per_base_unit']) ? number_format((float) $validated['cost_per_base_unit'], 4, '.', '') : '0.0000';
-        $actor = Auth::guard('web')->user();
-
-        DB::connection('tenant')->transaction(function () use ($validated, $qty, $cost, $actor): void {
-            $batch = InventoryBatch::query()->create([
-                'product_id' => $validated['product_id'],
-                'batch_number' => $validated['batch_number'],
-                'expiration_date' => $validated['expiration_date'],
-                'cost_per_base_unit' => $cost,
-                'initial_base_quantity' => $qty,
-                'current_base_balance' => $qty,
-            ]);
-
-            $product = InventoryProduct::query()->findOrFail($validated['product_id']);
-            $newTotal = $product->calculateTotalStock();
-
-            InventoryMovementLedger::query()->create([
-                'idempotency_key' => (string) Str::uuid(),
-                'product_id' => $product->id,
-                'batch_id' => $batch->id,
-                'movement_type' => StockMovementType::Receive,
-                'quantity' => $qty,
-                'balance_after' => $newTotal,
-                'reason' => 'Stock intake received via portal console',
-                'recorded_by_user_id' => $actor->id,
-                'created_at' => now(),
-            ]);
-        });
+        $action->execute($request->toDTO(), $request->user());
 
         return redirect()->route('portal.inventory.index')->with(
             'success',
@@ -197,32 +136,15 @@ class InventoryController extends Controller
     /**
      * Process drug waste deduction.
      */
-    public function storeWaste(Request $request, BatchDeductionService $deductionService): RedirectResponse
+    public function storeWaste(WasteStockRequest $request, WasteStockAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'product_id' => ['required', 'exists:inventory_products,id'],
-            'amount_base_units' => ['required', 'numeric', 'gt:0'],
-            'reason' => ['required', 'string', 'max:500'],
-        ]);
-
-        $product = InventoryProduct::query()->findOrFail($validated['product_id']);
-        $wasteAmount = number_format((float) $validated['amount_base_units'], 4, '.', '');
-        $actor = Auth::guard('web')->user();
-
-        $deductionService->deduct(
-            product: $product,
-            doseAmountBaseUnits: $wasteAmount,
-            actor: $actor,
-            movementType: StockMovementType::WastageDiscard,
-            reason: (string) $validated['reason'],
-            idempotencyKey: (string) Str::uuid()
-        );
+        $result = $action->execute($request->toDTO(), $request->user());
 
         return redirect()->route('portal.inventory.index')->with(
             'success',
             __('Drug waste of :amount :unit logged.', [
-                'amount' => $wasteAmount,
-                'unit' => is_object($product->base_unit) ? $product->base_unit->value : $product->base_unit,
+                'amount' => $result['total_deducted'],
+                'unit' => is_object($result['product']->base_unit) ? $result['product']->base_unit->value : $result['product']->base_unit,
             ])
         );
     }

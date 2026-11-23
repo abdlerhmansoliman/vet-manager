@@ -42,6 +42,10 @@ class UpdateVisitAction
             $attributes['reason_for_visit'] = $dto->reasonForVisit;
         }
 
+        if ($dto->visitDate !== null) {
+            $attributes['visit_date'] = $dto->visitDate;
+        }
+
         if ($dto->isSigned) {
             $attributes['is_signed'] = true;
             $attributes['signed_at'] = now();

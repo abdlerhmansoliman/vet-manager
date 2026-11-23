@@ -35,11 +35,13 @@ final readonly class CreateProductDTO
                 : ControlledSubstanceSchedule::from((string) $data['controlled_schedule']))
             : ControlledSubstanceSchedule::Uncontrolled;
 
+        $isControlled = $controlledSchedule->isControlled() || (bool) ($data['is_controlled'] ?? false);
+
         return new self(
             name: (string) $data['name'],
             sku: strtoupper(trim((string) $data['sku'])),
             baseUnit: $baseUnit,
-            isControlled: isset($data['is_controlled']) ? (bool) $data['is_controlled'] : false,
+            isControlled: $isControlled,
             controlledSchedule: $controlledSchedule,
             reorderThreshold: isset($data['reorder_threshold']) ? (string) $data['reorder_threshold'] : '0.0000',
             packageDescription: isset($data['package_description']) ? (string) $data['package_description'] : null,

@@ -14,7 +14,7 @@ const form = useForm({
     name_or_tag: '',
     species: 'Canine',
     breed: '',
-    gender: 'male',
+    gender: '',
     date_of_birth: '',
     current_weight_kg: '',
     microchip_number: '',
@@ -56,7 +56,7 @@ const submit = () => {
                         >
                             <option value="" disabled>Select registered client</option>
                             <option v-for="c in clients" :key="c.id" :value="c.id">
-                                {{ c.name }} ({{ c.phone || 'No phone' }})
+                                {{ c.name }} ({{ c.phone_primary || c.phone || 'No phone' }})
                             </option>
                         </select>
                         <p v-if="form.errors.client_id" class="mt-1 text-xs text-rose-600 font-medium">
@@ -121,18 +121,25 @@ const submit = () => {
                         </div>
 
                         <div>
-                            <label for="gender" class="block text-xs font-bold text-stone-700 uppercase tracking-wider">Gender</label>
+                            <label for="gender" class="block text-xs font-bold text-stone-700 uppercase tracking-wider">
+                                Gender <span class="text-rose-500">*</span>
+                            </label>
                             <select
                                 id="gender"
                                 v-model="form.gender"
+                                required
                                 class="mt-1.5 w-full rounded-xl border border-stone-300 px-3.5 py-2.5 text-xs sm:text-sm text-stone-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                             >
-                                <option value="male">Male</option>
-                                <option value="female">Female</option>
+                                <option value="" disabled>Select gender / reproductive status</option>
+                                <option value="intact_male">Intact Male</option>
                                 <option value="neutered_male">Neutered Male</option>
+                                <option value="intact_female">Intact Female</option>
                                 <option value="spayed_female">Spayed Female</option>
                                 <option value="unknown">Unknown</option>
                             </select>
+                            <p v-if="form.errors.gender" class="mt-1 text-xs text-rose-600 font-medium">
+                                {{ form.errors.gender }}
+                            </p>
                         </div>
                     </div>
 

@@ -4,6 +4,7 @@ import ClinicLayout from '@/Layouts/ClinicLayout.vue';
 
 const form = useForm({
     name: '',
+    client_type: 'individual',
     phone: '',
     email: '',
     address: '',

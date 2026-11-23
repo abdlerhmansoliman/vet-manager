@@ -8,6 +8,10 @@ defineProps({
         type: String,
         default: 'Clinic Portal',
     },
+    fullWidth: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const page = usePage();
@@ -48,7 +52,7 @@ const logout = () => {
     <div class="min-h-screen bg-[#FAF8F5] flex flex-col antialiased">
         <!-- TOP CLINIC NAVIGATION BAR -->
         <header class="bg-white/95 backdrop-blur-md border-b border-stone-200/80 sticky top-0 z-40 transition-shadow">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div :class="[fullWidth ? 'max-w-[1800px]' : 'max-w-7xl', 'mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4']">
                 <!-- Left: Logo & Mobile Toggle -->
                 <div class="flex items-center space-x-3 rtl:space-x-reverse">
                     <button
@@ -175,7 +179,7 @@ const logout = () => {
         </header>
 
         <!-- MAIN LAYOUT BODY -->
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full flex flex-col md:flex-row gap-6">
+        <div :class="[fullWidth ? 'max-w-[1800px]' : 'max-w-7xl', 'mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full flex flex-col md:flex-row gap-6']">
             <!-- SIDEBAR NAVIGATION (Desktop) -->
             <aside class="hidden md:block w-56 shrink-0">
                 <nav class="sticky top-24 space-y-1 bg-white p-3 rounded-2xl border border-stone-200 shadow-2xs">

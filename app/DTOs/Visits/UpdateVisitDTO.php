@@ -12,6 +12,7 @@ final readonly class UpdateVisitDTO
         public ?string $status = null,
         public ?string $reasonForVisit = null,
         public ?bool $isSigned = null,
+        public ?string $visitDate = null,
     ) {}
 
     /**
@@ -25,6 +26,7 @@ final readonly class UpdateVisitDTO
             status: array_key_exists('status', $data) ? (string) $data['status'] : null,
             reasonForVisit: array_key_exists('reason_for_visit', $data) ? (is_null($data['reason_for_visit']) ? null : trim((string) $data['reason_for_visit'])) : null,
             isSigned: array_key_exists('is_signed', $data) ? (bool) $data['is_signed'] : null,
+            visitDate: array_key_exists('visit_date', $data) ? (is_null($data['visit_date']) ? null : (string) $data['visit_date']) : null,
         );
     }
 }

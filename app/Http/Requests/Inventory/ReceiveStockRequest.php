@@ -15,6 +15,16 @@ class ReceiveStockRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('initial_base_quantity') && ! $this->has('containers_count')) {
+            $this->merge([
+                'containers_count' => 1,
+                'base_quantity_per_container' => (string) $this->input('initial_base_quantity'),
+            ]);
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */

@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Portal;
 
-use App\Enums\ClientType;
+use App\Actions\Client\CreateClientAction;
+use App\Actions\Client\UpdateClientAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Client\CreateClientRequest;
+use App\Http\Requests\Client\UpdateClientRequest;
 use App\Models\Client;
 use App\Services\Tenancy\TenantManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -57,29 +59,9 @@ class ClientController extends Controller
     /**
      * Store new client.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(CreateClientRequest $request, CreateClientAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'client_type' => ['nullable', Rule::enum(ClientType::class)],
-            'contact_person' => ['nullable', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:50'],
-            'phone_primary' => ['nullable', 'string', 'max:50'],
-            'phone_secondary' => ['nullable', 'string', 'max:50'],
-            'address' => ['nullable', 'string', 'max:500'],
-            'physical_address' => ['nullable', 'string', 'max:500'],
-            'notes' => ['nullable', 'string', 'max:1000'],
-        ]);
-
-        $client = Client::query()->create([
-            'name' => $validated['name'],
-            'client_type' => $validated['client_type'] ?? ClientType::Individual,
-            'contact_person' => $validated['contact_person'] ?? null,
-            'phone_primary' => $validated['phone'] ?? $validated['phone_primary'] ?? 'N/A',
-            'phone_secondary' => $validated['phone_secondary'] ?? null,
-            'physical_address' => $validated['address'] ?? $validated['physical_address'] ?? null,
-            'notes' => $validated['notes'] ?? null,
-        ]);
+        $client = $action->execute($request->toDTO());
 
         return redirect()->route('portal.clients.show', $client->id)->with(
             'success',
@@ -113,33 +95,13 @@ class ClientController extends Controller
     /**
      * Update client details.
      */
-    public function update(Client $client, Request $request): RedirectResponse
+    public function update(Client $client, UpdateClientRequest $request, UpdateClientAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'client_type' => ['nullable', Rule::enum(ClientType::class)],
-            'contact_person' => ['nullable', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:50'],
-            'phone_primary' => ['nullable', 'string', 'max:50'],
-            'phone_secondary' => ['nullable', 'string', 'max:50'],
-            'address' => ['nullable', 'string', 'max:500'],
-            'physical_address' => ['nullable', 'string', 'max:500'],
-            'notes' => ['nullable', 'string', 'max:1000'],
-        ]);
+        $updated = $action->execute($client, $request->toDTO());
 
-        $client->update([
-            'name' => $validated['name'],
-            'client_type' => $validated['client_type'] ?? $client->client_type,
-            'contact_person' => $validated['contact_person'] ?? $client->contact_person,
-            'phone_primary' => $validated['phone'] ?? $validated['phone_primary'] ?? $client->phone_primary,
-            'phone_secondary' => $validated['phone_secondary'] ?? $client->phone_secondary,
-            'physical_address' => $validated['address'] ?? $validated['physical_address'] ?? $client->physical_address,
-            'notes' => $validated['notes'] ?? $client->notes,
-        ]);
-
-        return redirect()->route('portal.clients.show', $client->id)->with(
+        return redirect()->route('portal.clients.show', $updated->id)->with(
             'success',
-            __('Client :name updated successfully.', ['name' => $client->name])
+            __('Client :name updated successfully.', ['name' => $updated->name])
         );
     }
 }

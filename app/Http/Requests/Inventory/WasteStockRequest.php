@@ -15,6 +15,13 @@ class WasteStockRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('amount_base_units') && ! $this->has('quantity')) {
+            $this->merge(['quantity' => (string) $this->input('amount_base_units')]);
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */

@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\Inventory\InventoryWasteController;
 use App\Http\Controllers\Api\V1\Inventory\ProductController;
 use App\Http\Controllers\Api\V1\Media\MediaController;
 use App\Http\Controllers\Api\V1\Patient\PatientController;
+use App\Http\Controllers\Api\V1\Reports\PdfController;
 use App\Http\Controllers\Api\V1\Species\SpeciesController;
 use App\Http\Controllers\Api\V1\Staff\StaffController;
 use App\Http\Controllers\Api\V1\Sync\SyncController;
@@ -100,6 +101,7 @@ Route::middleware('tenant')->group(function (): void {
             Route::post('/cases', [ClinicalCaseController::class, 'store']);
             Route::get('/cases/{case}', [ClinicalCaseController::class, 'show']);
             Route::put('/cases/{case}', [ClinicalCaseController::class, 'update']);
+            Route::get('/cases/{case}/pdf', [PdfController::class, 'case']);
 
             // Diagnoses (nested under cases)
             Route::get('/cases/{case}/diagnoses', [DiagnosisController::class, 'index']);
@@ -110,6 +112,7 @@ Route::middleware('tenant')->group(function (): void {
             Route::post('/cases/{case}/visits', [VisitController::class, 'store']);
             Route::get('/visits/{visit}', [VisitController::class, 'show']);
             Route::put('/visits/{visit}', [VisitController::class, 'update']);
+            Route::get('/visits/{visit}/pdf', [PdfController::class, 'visit']);
 
             // Clinical Progress Notes (nested under cases)
             Route::get('/cases/{case}/progress-notes', [ClinicalProgressNoteController::class, 'index']);

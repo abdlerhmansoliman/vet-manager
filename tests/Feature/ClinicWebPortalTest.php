@@ -225,6 +225,14 @@ class ClinicWebPortalTest extends TestCase
         $this->withSession(['active_tenant_id' => $this->alphaTenant->id])
             ->actingAs($this->doctor, 'web');
 
+        // Form renders cleanly with client list
+        $createPageResponse = $this->get('/portal/patients/create');
+        $createPageResponse->assertStatus(200);
+        $createPageResponse->assertInertia(fn (Assert $page) => $page
+            ->component('Patients/Create')
+            ->has('clients')
+        );
+
         // Create new patient
         $storeResponse = $this->post('/portal/patients', [
             'client_id' => $this->client->id,
@@ -240,6 +248,15 @@ class ClinicWebPortalTest extends TestCase
         $createdPatient = Patient::query()->where('name_or_tag', 'Luna')->firstOrFail();
         $storeResponse->assertRedirect(route('portal.patients.show', $createdPatient->id));
         $this->assertEquals(['Cephalexin'], $createdPatient->allergies);
+
+        // Edit page renders cleanly
+        $editPageResponse = $this->get("/portal/patients/{$createdPatient->id}/edit");
+        $editPageResponse->assertStatus(200);
+        $editPageResponse->assertInertia(fn (Assert $page) => $page
+            ->component('Patients/Edit')
+            ->has('patient')
+            ->has('clients')
+        );
 
         // Update patient demographics
         $updateResponse = $this->put("/portal/patients/{$createdPatient->id}", [
@@ -493,5 +510,72 @@ class ClinicWebPortalTest extends TestCase
             ->get('/portal/login');
 
         $response->assertRedirect(route('portal.dashboard'));
+    }
+
+    public function test_put_visit_on_signed_visit_is_rejected_and_cannot_modify_metadata(): void
+    {
+        $this->withSession(['active_tenant_id' => $this->alphaTenant->id])
+            ->actingAs($this->doctor, 'web');
+
+        $this->visit->update(['is_signed' => true, 'signed_at' => now(), 'signed_by' => 'Dr. Test']);
+
+        $response = $this->put("/portal/visits/{$this->visit->id}", [
+            'title' => 'Malicious Modification',
+            'visit_type' => 'inpatient',
+        ]);
+
+        $response->assertSessionHasErrors(['visit']);
+        $this->assertNotEquals('Malicious Modification', $this->visit->fresh()->title);
+    }
+
+    public function test_patient_update_preserves_existing_allergies_when_omitted(): void
+    {
+        $this->withSession(['active_tenant_id' => $this->alphaTenant->id])
+            ->actingAs($this->doctor, 'web');
+
+        $this->patient->update(['allergies' => ['Penicillin', 'Sulfa']]);
+
+        $this->put("/portal/patients/{$this->patient->id}", [
+            'client_id' => $this->client->id,
+            'name_or_tag' => 'Luna Updated',
+            'species' => 'Feline',
+            'breed' => 'Siamese',
+            'gender' => 'spayed_female',
+            'status' => 'active',
+            // Notice: allergies / high_risk_allergies omitted
+        ])->assertRedirect(route('portal.patients.show', $this->patient->id));
+
+        $fresh = $this->patient->fresh();
+        $this->assertEquals(['Penicillin', 'Sulfa'], $fresh->allergies);
+    }
+
+    public function test_staff_cannot_deactivate_themselves(): void
+    {
+        $this->withSession(['active_tenant_id' => $this->alphaTenant->id])
+            ->actingAs($this->doctor, 'web');
+
+        $response = $this->post("/portal/staff/{$this->doctor->id}/toggle-availability");
+        $response->assertSessionHas('error');
+
+        $this->assertTrue($this->doctor->fresh()->is_active);
+    }
+
+    public function test_create_product_enforces_is_controlled_for_scheduled_drugs(): void
+    {
+        $this->withSession(['active_tenant_id' => $this->alphaTenant->id])
+            ->actingAs($this->doctor, 'web');
+
+        $sku = 'CII-'.strtoupper(bin2hex(random_bytes(3)));
+
+        $this->post('/portal/inventory', [
+            'name' => 'Morphine Sulfate',
+            'sku' => $sku,
+            'base_unit' => 'ml',
+            'controlled_schedule' => 'schedule_2',
+            'is_controlled' => false, // Client attempt to bypass controlled flag
+        ])->assertRedirect(route('portal.inventory.index'));
+
+        $product = InventoryProduct::query()->where('sku', $sku)->firstOrFail();
+        $this->assertTrue($product->is_controlled);
     }
 }

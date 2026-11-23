@@ -184,3 +184,11 @@ Whenever ANY modification is made to the backend or mobile codebase:
 - Every backend change must pass all PHPUnit feature & unit tests (`php artisan test`).
 - Every mobile change must pass static analysis (`flutter analyze` with 0 issues) and all unit/widget tests (`flutter test`).
 - Zero unverified code is ever merged or reported as complete.
+
+## 6. Mandatory AI Principal Architect Review via OpenRouter (Claude)
+Before considering ANY completed task (feature, refactor, schema migration, or bugfix) as done or ready to merge:
+1. **Dispatch to Claude**: Run the OpenRouter helper pipeline (`source ~/.openrouter_helpers.sh`) passing the git diff or specification to Claude (e.g., `git diff HEAD~1 | rev "..."` or `cat <spec> | arch "..."`).
+2. **Analyze Review**: Thoroughly evaluate Claude's architectural assessment, edge-case register, security audits, and offline sync implications.
+3. **Act & Execute**: Immediately implement all critical fixes, edge-case mitigations, and architectural recommendations highlighted in Claude's review before marking the task complete.
+4. **Document Verdict**: Record Claude's review outcome, findings, and applied mitigations in the task walkthrough / documentation.
+

@@ -90,4 +90,5 @@ Route::middleware(['auth:web', 'tenant'])->group(function (): void {
     Route::get('/staff/create', [StaffController::class, 'create'])->name('portal.staff.create');
     Route::post('/staff', [StaffController::class, 'store'])->name('portal.staff.store');
     Route::post('/staff/{user}/toggle-availability', [StaffController::class, 'toggleAvailability'])->name('portal.staff.toggle-availability');
+    Route::post('/staff/{user}/toggle-duty', [StaffController::class, 'toggleAvailability'])->name('portal.staff.toggle-duty');
 });

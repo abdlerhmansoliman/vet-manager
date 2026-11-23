@@ -18,6 +18,15 @@ class CreateProductRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('sku') && is_string($this->input('sku'))) {
+            $this->merge([
+                'sku' => strtoupper(trim($this->input('sku'))),
+            ]);
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */

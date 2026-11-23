@@ -4,21 +4,18 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Portal;
 
-use App\Enums\CasePriority;
-use App\Enums\CaseStatus;
-use App\Enums\CaseType;
-use App\Enums\DiagnosisStatus;
+use App\Actions\Cases\OpenCaseAction;
+use App\Actions\Cases\UpdateCaseAction;
 use App\Enums\StaffRole;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Cases\OpenCaseRequest;
+use App\Http\Requests\Cases\UpdateCaseRequest;
 use App\Models\ClinicalCase;
-use App\Models\Diagnosis;
 use App\Models\Patient;
 use App\Models\User;
 use App\Services\Tenancy\TenantManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -59,50 +56,17 @@ class ClinicalCaseController extends Controller
     /**
      * Store new clinical case in tenant database.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(OpenCaseRequest $request, OpenCaseAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'patient_id' => ['required', 'exists:patients,id'],
-            'chief_complaint' => ['required', 'string', 'max:1000'],
-            'priority' => ['required', Rule::enum(CasePriority::class)],
-            'case_type' => ['required', Rule::enum(CaseType::class)],
-            'primary_veterinarian_id' => ['nullable', 'exists:users,id'],
-            'provisional_diagnosis' => ['nullable', 'string', 'max:255'],
-        ]);
-
-        $patient = Patient::query()->findOrFail($validated['patient_id']);
-
-        // Generate systematic clinical case number
-        $year = date('Y');
-        $countThisYear = ClinicalCase::query()->whereYear('created_at', (int) $year)->count() + 1;
-        $caseNumber = sprintf('CAS-%s-%04d', $year, $countThisYear);
-
-        $case = ClinicalCase::query()->create([
-            'case_number' => $caseNumber,
-            'patient_id' => $patient->id,
-            'primary_veterinarian_id' => $validated['primary_veterinarian_id'] ?? Auth::guard('web')->id(),
-            'case_type' => $validated['case_type'],
-            'status' => CaseStatus::Open,
-            'priority' => $validated['priority'],
-            'chief_complaint' => $validated['chief_complaint'],
-            'provisional_diagnosis' => $validated['provisional_diagnosis'] ?? null,
-            'admitted_at' => now(),
-        ]);
-
-        if (! empty($validated['provisional_diagnosis'])) {
-            Diagnosis::query()->create([
-                'case_id' => $case->id,
-                'patient_id' => $patient->id,
-                'user_id' => $case->primary_veterinarian_id,
-                'diagnosis' => $validated['provisional_diagnosis'],
-                'status' => DiagnosisStatus::Tentative,
-                'diagnosed_at' => now(),
-            ]);
-        }
+        $case = $action->execute($request->toDTO());
+        $case->loadMissing('patient');
 
         return redirect()->route('portal.cases.show', $case->id)->with(
             'success',
-            __('Clinical Case :number opened for :patient.', ['number' => $case->case_number, 'patient' => $patient->name_or_tag])
+            __('Clinical Case :number opened for :patient.', [
+                'number' => $case->case_number,
+                'patient' => $case->patient?->name_or_tag ?? 'Patient',
+            ])
         );
     }
 
@@ -154,51 +118,13 @@ class ClinicalCaseController extends Controller
     /**
      * Update case details, diagnoses, triage priority, and status.
      */
-    public function update(ClinicalCase $case, Request $request): RedirectResponse
+    public function update(ClinicalCase $case, UpdateCaseRequest $request, UpdateCaseAction $action): RedirectResponse
     {
-        $validated = $request->validate([
-            'chief_complaint' => ['required', 'string', 'max:1000'],
-            'priority' => ['required', Rule::enum(CasePriority::class)],
-            'case_type' => ['required', Rule::enum(CaseType::class)],
-            'status' => ['required', Rule::enum(CaseStatus::class)],
-            'primary_veterinarian_id' => ['nullable', 'exists:users,id'],
-            'provisional_diagnosis' => ['nullable', 'string', 'max:255'],
-            'final_diagnosis' => ['nullable', 'string', 'max:255'],
-        ]);
+        $updated = $action->execute($case, $request->toDTO());
 
-        $case->update([
-            'chief_complaint' => $validated['chief_complaint'],
-            'priority' => $validated['priority'],
-            'case_type' => $validated['case_type'],
-            'status' => $validated['status'],
-            'primary_veterinarian_id' => $validated['primary_veterinarian_id'] ?? $case->primary_veterinarian_id,
-            'provisional_diagnosis' => $validated['provisional_diagnosis'] ?? null,
-            'final_diagnosis' => $validated['final_diagnosis'] ?? null,
-            'discharged_at' => in_array($validated['status'], [CaseStatus::Discharged->value, CaseStatus::Closed->value], true) ? now() : null,
-        ]);
-
-        // If final diagnosis added and not in table, add diagnosis record
-        if (! empty($validated['final_diagnosis'])) {
-            $alreadyExists = Diagnosis::query()
-                ->where('case_id', $case->id)
-                ->where('diagnosis', $validated['final_diagnosis'])
-                ->exists();
-
-            if (! $alreadyExists) {
-                Diagnosis::query()->create([
-                    'case_id' => $case->id,
-                    'patient_id' => $case->patient_id,
-                    'user_id' => $case->primary_veterinarian_id,
-                    'diagnosis' => $validated['final_diagnosis'],
-                    'status' => DiagnosisStatus::Active,
-                    'diagnosed_at' => now(),
-                ]);
-            }
-        }
-
-        return redirect()->route('portal.cases.show', $case->id)->with(
+        return redirect()->route('portal.cases.show', $updated->id)->with(
             'success',
-            __('Clinical Case :number updated successfully.', ['number' => $case->case_number])
+            __('Clinical Case :number updated successfully.', ['number' => $updated->case_number])
         );
     }
 }

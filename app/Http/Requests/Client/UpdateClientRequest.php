@@ -17,6 +17,20 @@ class UpdateClientRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $merge = [];
+        if ($this->has('phone') && ! $this->has('phone_primary')) {
+            $merge['phone_primary'] = $this->input('phone');
+        }
+        if ($this->has('address') && ! $this->has('physical_address')) {
+            $merge['physical_address'] = $this->input('address');
+        }
+        if (! empty($merge)) {
+            $this->merge($merge);
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */

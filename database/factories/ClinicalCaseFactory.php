@@ -22,7 +22,7 @@ class ClinicalCaseFactory extends Factory
     public function definition(): array
     {
         return [
-            'case_number' => 'CAS-'.date('Y').'-'.fake()->unique()->numerify('#####'),
+            'case_number' => 'CAS-'.date('Y').'-'.fake()->unique()->numerify('########'),
             'patient_id' => Patient::factory(),
             'primary_veterinarian_id' => User::factory(),
             'case_type' => fake()->randomElement(CaseType::cases()),
