@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { trans } from 'laravel-vue-i18n';
 
 const props = defineProps({
     priority: {
@@ -23,12 +24,12 @@ const priorityClass = computed(() => {
 const priorityLabel = computed(() => {
     switch (props.priority) {
         case 'emergency_critical':
-            return 'Critical / Emergency';
+            return trans('Critical / Emergency');
         case 'urgent':
-            return 'Urgent';
+            return trans('Urgent');
         case 'routine':
         default:
-            return 'Routine';
+            return trans('Routine');
     }
 });
 </script>

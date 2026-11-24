@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { trans } from 'laravel-vue-i18n';
 
 const props = defineProps({
     status: {
@@ -17,6 +18,7 @@ const statusStyle = computed(() => {
         case 'in_progress':
             return 'bg-sky-50 text-sky-700 border-sky-200';
         case 'observation':
+        case 'under_observation':
             return 'bg-amber-50 text-amber-700 border-amber-200';
         case 'resolved':
         case 'completed':
@@ -30,7 +32,31 @@ const statusStyle = computed(() => {
 });
 
 const statusLabel = computed(() => {
-    return props.status?.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Unknown';
+    const raw = props.status?.toLowerCase() || '';
+    switch (raw) {
+        case 'open':
+            return trans('Open');
+        case 'active':
+            return trans('Active');
+        case 'in_treatment':
+        case 'in_progress':
+            return trans('In Treatment');
+        case 'observation':
+        case 'under_observation':
+            return trans('Under Observation');
+        case 'resolved':
+            return trans('Resolved');
+        case 'completed':
+            return trans('Completed');
+        case 'closed':
+            return trans('Closed');
+        case 'deceased':
+            return trans('Deceased');
+        case 'critical_care':
+            return trans('Critical Care');
+        default:
+            return trans(props.status?.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Unknown');
+    }
 });
 </script>
 

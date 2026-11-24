@@ -28,7 +28,7 @@ final class FractionalQuantity implements Stringable
         // Reject scientific notation, non-numeric strings, or malformed decimals (max 8 integer digits + 4 decimals)
         if (strlen($trimmed) > 13 || ! preg_match('/^\d{1,8}(\.\d{1,4})?$/', $trimmed)) {
             throw ValidationException::withMessages([
-                $fieldName => ["Quantity must be a valid positive numeric value (max 8 integer digits, up to 4 decimal places)."],
+                $fieldName => [__('Quantity must be a valid positive numeric value (max 8 integer digits, up to 4 decimal places).')],
             ]);
         }
 
@@ -36,7 +36,7 @@ final class FractionalQuantity implements Stringable
 
         if (bccomp($normalized, '0.0000', 4) <= 0) {
             throw ValidationException::withMessages([
-                $fieldName => ["Quantity must be strictly greater than zero."],
+                $fieldName => [__('Quantity must be strictly greater than zero.')],
             ]);
         }
 
@@ -59,18 +59,21 @@ final class FractionalQuantity implements Stringable
     public function add(self|string $other): self
     {
         $otherVal = $other instanceof self ? $other->value : bcadd(trim((string) $other), '0.0000', 4);
+
         return new self(bcadd($this->value, $otherVal, 4));
     }
 
     public function sub(self|string $other): self
     {
         $otherVal = $other instanceof self ? $other->value : bcadd(trim((string) $other), '0.0000', 4);
+
         return new self(bcsub($this->value, $otherVal, 4));
     }
 
     public function comp(self|string $other): int
     {
         $otherVal = $other instanceof self ? $other->value : bcadd(trim((string) $other), '0.0000', 4);
+
         return bccomp($this->value, $otherVal, 4);
     }
 

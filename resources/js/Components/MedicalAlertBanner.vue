@@ -19,7 +19,7 @@ defineProps({
         </div>
         <div>
             <h4 class="text-xs font-bold uppercase tracking-wider text-rose-900 flex items-center space-x-1.5 rtl:space-x-reverse">
-                <span>Critical Medical Alert — Documented Allergies</span>
+                <span>{{ $t('Critical Medical Alert — Documented Allergies') }}</span>
             </h4>
             <p class="text-xs sm:text-sm font-semibold text-rose-800 mt-0.5">
                 {{ Array.isArray(allergies) ? allergies.join(', ') : allergies }}

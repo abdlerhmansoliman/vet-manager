@@ -24,6 +24,9 @@
         [dir="ltr"] {
             font-family: var(--font-latin);
         }
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined' !important;
+        }
     </style>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\MeasurementBaseUnit;
 use App\Events\SyncBatchCompletedEvent;
 use App\Jobs\ProcessSyncMutationsJob;
 use App\Models\Client;
 use App\Models\ClinicalCase;
 use App\Models\ClinicalProgressNote;
+use App\Models\InventoryProduct;
 use App\Models\Patient;
 use App\Models\Tenant;
 use App\Models\User;
@@ -1020,11 +1022,11 @@ class SyncTest extends TestCase
             'patient_id' => $patient->id,
             'primary_veterinarian_id' => $this->veterinarian->id,
         ]);
-        $product = \App\Models\InventoryProduct::query()->create([
+        $product = InventoryProduct::query()->create([
             'id' => (string) Str::uuid(),
             'name' => 'Diazepam 5mg/ml',
             'sku' => 'DIAZ-'.uniqid(),
-            'base_unit' => \App\Enums\MeasurementBaseUnit::Ml,
+            'base_unit' => MeasurementBaseUnit::Ml,
             'is_controlled' => false,
         ]);
 

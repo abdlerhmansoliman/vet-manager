@@ -40,8 +40,33 @@ class ClientController extends Controller
 
         $clients = $query->paginate(20)->withQueryString();
 
+        $stats = Client::query()
+            ->toBase()
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw("SUM(CASE WHEN client_type = 'individual' THEN 1 ELSE 0 END) as individual")
+            ->selectRaw("SUM(CASE WHEN client_type IN ('farm_manager', 'livestock_enterprise') THEN 1 ELSE 0 END) as farm")
+            ->first();
+
+        $clientStats = [
+            'total' => (int) ($stats->total ?? 0),
+            'individual' => (int) ($stats->individual ?? 0),
+            'farm' => (int) ($stats->farm ?? 0),
+        ];
+
+        $formattedClients = collect($clients->items())->map(fn (Client $c): array => [
+            'id' => $c->id,
+            'name' => $c->name,
+            'client_type' => $c->client_type,
+            'contact_person' => $c->contact_person,
+            'phone_primary' => $c->phone_primary,
+            'phone_secondary' => $c->phone_secondary,
+            'email' => $c->email,
+            'patients_count' => (int) ($c->patients_count ?? 0),
+        ])->all();
+
         return Inertia::render('Clients/Index', [
-            'clients' => $clients->items(),
+            'clients' => $formattedClients,
+            'stats' => $clientStats,
             'filters' => [
                 'search' => (string) $request->input('search', ''),
             ],

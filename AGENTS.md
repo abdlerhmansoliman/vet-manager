@@ -156,7 +156,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 > Any modification made to the Backend (`/var/www/vet-manager`) or Mobile (`/home/abdelrhaman/www/vet-manager-mobile`) codebase MUST strictly adhere to these permanent rules:
 
 ## 1. Full-Stack Architectural Parity Invariant
-Every clinical and domain entity must exist in 100% architectural parity between Backend (Laravel 11 + MySQL + Eloquent) and Mobile (Flutter + Drift SQLite). Whenever an entity, field, or action is added or updated on either side:
+Every clinical and domain entity must exist in 100% architectural parity between Backend (Laravel 13 + MySQL + Eloquent) and Mobile (Flutter + Drift SQLite). Whenever an entity, field, or action is added or updated on either side:
 - **Database Schema Parity**: Eloquent migrations and MySQL schema must correspond 1:1 with Drift SQLite tables and DAOs.
 - **Bidirectional Sync Engine Parity**: Any new or updated entity must be registered in the sync engine:
   - Delta pull: `app/Http/Controllers/Api/V1/Sync/SyncController.php` must return modified entities within the `since` window.
@@ -185,10 +185,19 @@ Whenever ANY modification is made to the backend or mobile codebase:
 - Every mobile change must pass static analysis (`flutter analyze` with 0 issues) and all unit/widget tests (`flutter test`).
 - Zero unverified code is ever merged or reported as complete.
 
-## 6. Mandatory AI Principal Architect Review via OpenRouter (Claude)
-Before considering ANY completed task (feature, refactor, schema migration, or bugfix) as done or ready to merge:
-1. **Dispatch to Claude**: Run the OpenRouter helper pipeline (`source ~/.openrouter_helpers.sh`) passing the git diff or specification to Claude (e.g., `git diff HEAD~1 | rev "..."` or `cat <spec> | arch "..."`).
-2. **Analyze Review**: Thoroughly evaluate Claude's architectural assessment, edge-case register, security audits, and offline sync implications.
-3. **Act & Execute**: Immediately implement all critical fixes, edge-case mitigations, and architectural recommendations highlighted in Claude's review before marking the task complete.
-4. **Document Verdict**: Record Claude's review outcome, findings, and applied mitigations in the task walkthrough / documentation.
+## 6. Mandatory Bilingual Localization (Zero Untranslated UI)
+Every user-facing task, feature, screen, component, modal, validation error, badge, or notification across both Web and Mobile platforms MUST include complete, high-quality bilingual translations (Arabic & English) as an immutable definition of done:
+- **Web Localization Standards (`laravel-vue-i18n`)**:
+  - Central dictionary files: `lang/en.json` and `lang/ar.json`.
+  - Vue templates must use `$t('...')` and scripts must use `trans('...')`.
+  - Zero translation bloat over HTTP: Inertia middleware (`HandleInertiaRequests.php`) must NEVER pass translation dictionaries. All translations are compiled by Vite into client-side chunks loaded on demand.
+  - Zero hardcoded UI text or ad-hoc ternary language checks (`isAr ? ... : ...`).
+  - Full RTL/LTR layout parity: Use Tailwind logical properties and `rtl:` variants.
+- **Mobile Localization Standards (Flutter `l10n` / ARB)**:
+  - Central localization files: `lib/l10n/app_en.arb` and `lib/l10n/app_ar.arb`.
+  - Flutter widgets must use `AppLocalizations.of(context)!.<key>`.
+  - Run `flutter gen-l10n` after any ARB file modification.
+  - Zero hardcoded strings in `Text`, `SnackBar`, dialog titles, or input validation messages.
+  - Full RTL/LTR directional support (`Directionality`, `start`/`end` alignments).
+- **Task Completion Gate**: Any task touching user interface where Arabic or English strings are missing, hardcoded, or untranslated will be rejected immediately as incomplete.
 

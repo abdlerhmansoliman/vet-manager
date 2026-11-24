@@ -17,7 +17,8 @@ class TenantDatabaseMigrateCommand extends Command
      */
     protected $signature = 'tenants:migrate 
                             {--tenant= : The UUID or slug of a specific tenant} 
-                            {--fresh : Drop all tables and re-run all migrations for the tenant(s)}';
+                            {--fresh : Drop all tables and re-run all migrations for the tenant(s)}
+                            {--force : Force the operation to run when in production}';
 
     /**
      * The console command description.

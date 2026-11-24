@@ -53,8 +53,24 @@ class InventoryController extends Controller
             'batches_count' => $p->batches->count(),
         ])->all();
 
+        $stats = InventoryProduct::query()
+            ->toBase()
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw('SUM(CASE WHEN is_controlled = 1 THEN 1 ELSE 0 END) as controlled')
+            ->first();
+
+        $allProducts = InventoryProduct::query()->with('batches')->get();
+        $lowStockCount = $allProducts->filter(fn ($p) => (float) $p->calculateTotalStock() <= (float) $p->reorder_threshold)->count();
+
+        $inventoryStats = [
+            'total' => (int) ($stats->total ?? 0),
+            'controlled' => (int) ($stats->controlled ?? 0),
+            'low_stock' => $lowStockCount,
+        ];
+
         return Inertia::render('Inventory/Index', [
             'products' => $formattedProducts,
+            'stats' => $inventoryStats,
             'filters' => [
                 'search' => (string) $request->input('search', ''),
             ],

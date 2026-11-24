@@ -52,11 +52,58 @@ class PatientController extends Controller
 
         $patients = $query->paginate(20)->withQueryString();
 
+        $stats = Patient::query()
+            ->toBase()
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw("SUM(CASE WHEN species = 'Canine' THEN 1 ELSE 0 END) as canine")
+            ->selectRaw("SUM(CASE WHEN species = 'Feline' THEN 1 ELSE 0 END) as feline")
+            ->selectRaw("SUM(CASE WHEN species = 'Equine' THEN 1 ELSE 0 END) as equine")
+            ->selectRaw("SUM(CASE WHEN species = 'Bovine' THEN 1 ELSE 0 END) as bovine")
+            ->selectRaw("SUM(CASE WHEN species = 'Ovine' THEN 1 ELSE 0 END) as ovine")
+            ->first();
+
+        $speciesStats = [
+            'total' => (int) ($stats->total ?? 0),
+            'canine' => (int) ($stats->canine ?? 0),
+            'feline' => (int) ($stats->feline ?? 0),
+            'equine' => (int) ($stats->equine ?? 0),
+            'bovine' => (int) ($stats->bovine ?? 0),
+            'ovine' => (int) ($stats->ovine ?? 0),
+            'other' => (int) max(0, (int) ($stats->total ?? 0) - (
+                (int) ($stats->canine ?? 0) +
+                (int) ($stats->feline ?? 0) +
+                (int) ($stats->equine ?? 0) +
+                (int) ($stats->bovine ?? 0) +
+                (int) ($stats->ovine ?? 0)
+            )),
+        ];
+
+        $formattedPatients = collect($patients->items())->map(fn (Patient $p): array => [
+            'id' => $p->id,
+            'name_or_tag' => $p->name_or_tag,
+            'species' => $p->species,
+            'breed' => $p->breed,
+            'gender' => is_object($p->gender) ? $p->gender->value : (string) $p->gender,
+            'current_weight_kg' => $p->current_weight_kg,
+            'microchip_number' => $p->microchip_number,
+            'ear_tag_id' => $p->ear_tag_id,
+            'status' => is_object($p->status) ? $p->status->value : (string) $p->status,
+            'allergies' => $p->allergies ?? [],
+            'client' => $p->client ? [
+                'id' => $p->client->id,
+                'name' => $p->client->name,
+                'client_type' => $p->client->client_type,
+            ] : null,
+            'cases_count' => $p->cases->count(),
+        ])->all();
+
         return Inertia::render('Patients/Index', [
-            'patients' => $patients->items(),
+            'patients' => $formattedPatients,
+            'species_stats' => $speciesStats,
             'filters' => [
                 'search' => (string) $request->input('search', ''),
                 'species' => (string) $request->input('species', ''),
+                'status' => (string) $request->input('status', ''),
             ],
         ]);
     }
