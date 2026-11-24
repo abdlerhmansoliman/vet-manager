@@ -145,6 +145,15 @@ jobs:
           DB_USERNAME: abdelrhaman
           DB_PASSWORD: "12345678"
 
+      - name: Seed Tenants
+        run: php artisan db:seed --class=TenantSeeder --force
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: vet-manage
+          DB_USERNAME: abdelrhaman
+          DB_PASSWORD: "12345678"
+
       - name: Run Tenant Migrations
         run: php artisan tenants:migrate --force
         env:
