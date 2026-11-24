@@ -3,9 +3,11 @@ import laravel from 'laravel-vite-plugin';
 import { bunny } from 'laravel-vite-plugin/fonts';
 import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
+import i18n from 'laravel-vue-i18n/vite';
 
 export default defineConfig({
     plugins: [
+        i18n(),
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.js'],
             refresh: true,

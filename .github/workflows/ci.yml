@@ -1,0 +1,171 @@
+name: CI
+
+'on':
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code-quality:
+    name: Code Quality & Translations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, ctype, iconv, intl, pdo, pdo_mysql, bcmath, redis, gd, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache Composer Dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Install Composer Dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Run Pint Code Style Check
+        run: vendor/bin/pint --test
+
+      - name: Verify Bilingual Translations Parity
+        run: php artisan test --filter=TranslationCompletenessTest
+
+  frontend-build:
+    name: Frontend Build & Assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Build Frontend Assets (Vite)
+        run: npm run build
+
+      - name: Verify Vite Manifest
+        run: test -f public/build/manifest.json
+
+  backend-tests:
+    name: Multi-Tenant Test Suite
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: vet-manage
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=5
+
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Build Frontend Assets
+        run: npm run build
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, ctype, iconv, intl, pdo, pdo_mysql, bcmath, redis, gd, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache Composer Dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Install Composer Dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare Environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Provision Test Databases & Permissions
+        run: |
+          mysql -h 127.0.0.1 -u root -ppassword -e "
+            CREATE DATABASE IF NOT EXISTS \`vet-manage\`;
+            CREATE DATABASE IF NOT EXISTS \`vet_tenant_alphavet\`;
+            CREATE DATABASE IF NOT EXISTS \`vet_tenant_equinecare\`;
+            CREATE USER IF NOT EXISTS 'abdelrhaman'@'%' IDENTIFIED BY '12345678';
+            GRANT ALL PRIVILEGES ON *.* TO 'abdelrhaman'@'%' WITH GRANT OPTION;
+            FLUSH PRIVILEGES;
+          "
+
+      - name: Run Central Migrations
+        run: php artisan migrate --force
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: vet-manage
+          DB_USERNAME: abdelrhaman
+          DB_PASSWORD: "12345678"
+
+      - name: Run Tenant Migrations
+        run: php artisan tenants:migrate --force
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: vet-manage
+          DB_USERNAME: abdelrhaman
+          DB_PASSWORD: "12345678"
+
+      - name: Execute Full PHPUnit Test Suite
+        run: php artisan test --compact
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: vet-manage
+          DB_USERNAME: abdelrhaman
+          DB_PASSWORD: "12345678"
+          CACHE_STORE: redis
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync

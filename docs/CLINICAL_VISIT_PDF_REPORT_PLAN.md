@@ -85,8 +85,3 @@ This implementation provides an official server-side PDF generator that aggregat
 ### Step 6: Code Style & Review
 * Run `vendor/bin/pint --format agent` to enforce code standards.
 * Run full PHPUnit suite: `php artisan test --filter=VisitPdfTest`.
-
-### Step 7: Mandatory AI Principal Architect Review via OpenRouter (Claude)
-* Run `source ~/.openrouter_helpers.sh && git diff | rev "..."`
-* Analyze Claude's security, performance, and legal compliance review.
-* Apply any mitigations and report findings to the user.

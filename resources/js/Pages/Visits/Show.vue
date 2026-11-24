@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useForm, Link, router } from '@inertiajs/vue3';
+import { trans } from 'laravel-vue-i18n';
 import ClinicLayout from '@/Layouts/ClinicLayout.vue';
 import TriageBadge from '@/Components/TriageBadge.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
@@ -148,13 +149,13 @@ const uploadMedia = () => {
 const isSigning = ref(false);
 const signAndLock = () => {
     if (soapForm.isDirty) {
-        alert('You have unsaved changes in the SOAP examination form. Please save changes before signing and locking the record.');
+        alert(trans('You have unsaved changes in the SOAP examination form. Please save changes before signing and locking the record.'));
         return;
     }
 
     if (
         confirm(
-            'Are you sure you want to digitally sign and lock this clinical visit? All examination notes and dose records will be permanently locked against future edits.'
+            trans('Are you sure you want to digitally sign and lock this clinical visit? All examination notes and dose records will be permanently locked against future edits.')
         )
     ) {
         isSigning.value = true;
@@ -202,9 +203,55 @@ const weightSparkline = computed(() => {
 
 const otherVisits = computed(() => props.visits.filter((v) => v.id !== props.visit.id));
 
+const GENDER_MAP = {
+    male: 'Male',
+    female: 'Female',
+    neutered_male: 'Neutered Male',
+    spayed_female: 'Spayed Female',
+    intact_male: 'Intact Male',
+    intact_female: 'Intact Female',
+};
+
+const getGenderLabel = (gender) => {
+    const val = gender?.value ?? gender;
+    if (!val) return trans('Unknown');
+    const normalized = String(val).toLowerCase();
+    return GENDER_MAP[normalized] ? trans(GENDER_MAP[normalized]) : trans('Unknown');
+};
+
+const VISIT_TYPE_MAP = {
+    routine_checkup: 'Routine Checkup',
+    emergency: 'Emergency',
+    surgery: 'Surgery',
+    follow_up: 'Follow-up',
+    vaccination: 'Vaccination',
+    dental: 'Dental',
+    telemedicine: 'Telemedicine',
+    recheck: 'Recheck',
+    exam: 'Exam',
+    other: 'Other',
+};
+
 const formatVisitType = (type) => {
-    if (!type) return 'Visit';
-    return String(type).replaceAll('_', ' ');
+    if (!type) return trans('Visit');
+    const normalized = String(type).toLowerCase();
+    return VISIT_TYPE_MAP[normalized] ? trans(VISIT_TYPE_MAP[normalized]) : trans('Visit');
+};
+
+const DIAGNOSIS_STATUS_MAP = {
+    active: 'Active',
+    provisional: 'Provisional',
+    confirmed: 'Confirmed',
+    differential: 'Differential',
+    resolved: 'Resolved',
+    rule_out: 'Rule Out',
+    chronic: 'Chronic',
+};
+
+const getDiagnosisStatusLabel = (status) => {
+    const val = typeof status === 'object' ? (status?.value ?? 'active') : (status || 'active');
+    const normalized = String(val).toLowerCase();
+    return DIAGNOSIS_STATUS_MAP[normalized] ? trans(DIAGNOSIS_STATUS_MAP[normalized]) : trans('Active');
 };
 
 // Helpers
@@ -253,11 +300,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <ClinicLayout :title="`Encounter: ${visit.title}`" :full-width="true">
+    <ClinicLayout :title="$t('Encounter: :title', { title: visit.title })" :full-width="true">
         <div class="space-y-6 text-[#1b1c1a]">
             <!-- Draft Print Watermark -->
             <div v-if="!visit.is_signed" class="hidden print:block p-3 border-2 border-dashed border-amber-600 text-amber-900 text-center font-bold text-sm mb-4">
-                DRAFT CLINICAL ENCOUNTER — NOT YET DIGITALLY SIGNED
+                {{ $t('DRAFT CLINICAL ENCOUNTER — NOT YET DIGITALLY SIGNED') }}
             </div>
 
             <!-- 1. TOP CONTEXT, BREADCRUMBS & PATIENT MASTHEAD -->
@@ -265,7 +312,7 @@ onUnmounted(() => {
                 <!-- Breadcrumb Bar & Primary CTAs -->
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <nav class="flex items-center gap-2 text-xs text-stone-500 flex-wrap font-medium">
-                        <Link href="/portal/patients" class="hover:text-[#00685f] transition-colors">Patients</Link>
+                        <Link href="/portal/patients" class="hover:text-[#00685f] transition-colors">{{ $t('Patients') }}</Link>
                         <span class="material-symbols-outlined text-[16px] text-stone-300 rtl:rotate-180" aria-hidden="true">chevron_right</span>
                         <span class="text-stone-600">{{ patient.species }}</span>
                         <span class="material-symbols-outlined text-[16px] text-stone-300 rtl:rotate-180" aria-hidden="true">chevron_right</span>
@@ -274,7 +321,7 @@ onUnmounted(() => {
                         </Link>
                         <span class="material-symbols-outlined text-[16px] text-stone-300 rtl:rotate-180" aria-hidden="true">chevron_right</span>
                         <Link :href="`/portal/cases/${cCase.id}`" class="text-[#00685f] font-semibold hover:underline">
-                            Case: {{ cCase.case_number }}
+                            {{ $t('Case: :number', { number: cCase.case_number }) }}
                         </Link>
                         <span class="material-symbols-outlined text-[16px] text-stone-300 rtl:rotate-180" aria-hidden="true">chevron_right</span>
                         <span class="text-stone-900 font-bold bg-[#efeeeb] px-2 py-0.5 rounded-md">
@@ -289,7 +336,7 @@ onUnmounted(() => {
                             class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-white text-[#00685f] hover:bg-stone-50 border border-stone-200 shadow-xs text-xs font-semibold transition print:hidden"
                         >
                             <span class="material-symbols-outlined text-[18px]" aria-hidden="true">print</span>
-                            <span>Print Record</span>
+                            <span>{{ $t('Print Record') }}</span>
                         </button>
 
                         <Link
@@ -297,7 +344,7 @@ onUnmounted(() => {
                             class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-white text-[#00685f] hover:bg-stone-50 border border-stone-200 shadow-xs text-xs font-semibold transition print:hidden"
                         >
                             <span class="material-symbols-outlined text-[18px]" aria-hidden="true">add_circle</span>
-                            <span>+ New Case</span>
+                            <span>{{ $t('+ New Case') }}</span>
                         </Link>
 
                         <Link
@@ -306,7 +353,7 @@ onUnmounted(() => {
                             class="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-[#00685f] text-white hover:bg-[#005049] shadow-sm text-xs font-bold transition active:scale-95 print:hidden"
                         >
                             <span class="material-symbols-outlined text-[18px]" aria-hidden="true">edit_note</span>
-                            <span>+ New Encounter</span>
+                            <span>{{ $t('+ New Encounter') }}</span>
                         </Link>
                     </div>
                 </div>
@@ -338,32 +385,32 @@ onUnmounted(() => {
                                     {{ String(patientStatus).toUpperCase() }}
                                 </span>
                                 <span class="px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200 text-[11px] font-bold">
-                                    Level 3 Encounter Workspace
+                                    {{ $t('Level 3 Encounter Workspace') }}
                                 </span>
                             </div>
 
                             <div class="flex items-center gap-2 text-xs sm:text-sm text-stone-600 flex-wrap">
                                 <span class="font-semibold text-stone-800">{{ patient.species }}</span>
                                 <span>•</span>
-                                <span class="text-stone-700">{{ patient.breed ?? 'Breed not recorded' }}</span>
+                                <span class="text-stone-700">{{ patient.breed ?? $t('Breed not recorded') }}</span>
                                 <span>•</span>
-                                <span>{{ patient.age ? `${patient.age} yrs` : (patient.date_of_birth ? formatDate(patient.date_of_birth) : 'Age N/A') }}</span>
+                                <span>{{ patient.age ? $t(':age yrs', { age: patient.age }) : (patient.date_of_birth ? formatDate(patient.date_of_birth) : $t('Age N/A')) }}</span>
                                 <span>•</span>
-                                <span class="capitalize">{{ patient.gender?.value ? patient.gender.value.replace('_', ' ') : (typeof patient.gender === 'string' ? patient.gender.replace('_', ' ') : 'Unknown') }}</span>
+                                <span class="capitalize">{{ getGenderLabel(patient.gender) }}</span>
                                 <span>•</span>
                                 <span class="font-extrabold text-[#00685f]">
-                                    {{ patient.current_weight_kg ? `${patient.current_weight_kg} kg` : 'Weight N/A' }}
+                                    {{ patient.current_weight_kg ? $t(':weight kg', { weight: patient.current_weight_kg }) : $t('Weight N/A') }}
                                 </span>
                             </div>
 
                             <div class="flex items-center gap-4 text-[11px] text-stone-500 mt-0.5 flex-wrap font-medium">
                                 <span class="inline-flex items-center gap-1 font-mono">
                                     <span class="material-symbols-outlined text-[15px] text-stone-400" aria-hidden="true">fingerprint</span>
-                                    Microchip: <strong>{{ patient.microchip_number || 'Not chipped' }}</strong>
+                                    {{ $t('Microchip:') }} <strong>{{ patient.microchip_number || $t('Not chipped') }}</strong>
                                 </span>
                                 <span class="inline-flex items-center gap-1">
                                     <span class="material-symbols-outlined text-[15px] text-[#17684e]" aria-hidden="true">health_and_safety</span>
-                                    Encounter: <strong class="text-stone-700">{{ visit.is_signed ? 'Finalized & Locked' : 'In Progress' }}</strong>
+                                    {{ $t('Encounter:') }} <strong class="text-stone-700">{{ visit.is_signed ? $t('Finalized & Locked') : $t('In Progress') }}</strong>
                                 </span>
                             </div>
                         </div>
@@ -373,13 +420,13 @@ onUnmounted(() => {
                     <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-3.5 rounded-xl bg-[#f5f3f0] border border-stone-200/70 xl:w-auto w-full">
                         <div class="flex flex-col min-w-[190px]">
                             <span class="text-[10px] font-bold uppercase tracking-wider text-stone-400">
-                                Primary Pet Parent
+                                {{ $t('Primary Pet Parent') }}
                             </span>
                             <span class="text-xs font-bold text-stone-900 mt-0.5">
-                                {{ patient.client?.name ?? 'No client on file' }}
+                                {{ patient.client?.name ?? $t('No client on file') }}
                             </span>
                             <span class="text-[11px] text-stone-500 font-mono">
-                                {{ patient.client?.phone || 'No phone recorded' }}
+                                {{ patient.client?.phone || $t('No phone recorded') }}
                             </span>
                         </div>
 
@@ -390,7 +437,7 @@ onUnmounted(() => {
                                 class="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-white text-[#00685f] hover:bg-stone-50 border border-stone-200 text-xs font-bold shadow-2xs transition"
                             >
                                 <span class="material-symbols-outlined text-[15px]" aria-hidden="true">call</span>
-                                <span>Call</span>
+                                <span>{{ $t('Call') }}</span>
                             </a>
                             <Link
                                 v-if="patient.client?.id"
@@ -398,7 +445,7 @@ onUnmounted(() => {
                                 class="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-white text-stone-700 hover:bg-stone-50 border border-stone-200 text-xs font-semibold shadow-2xs transition"
                             >
                                 <span class="material-symbols-outlined text-[15px]" aria-hidden="true">person</span>
-                                <span>Account</span>
+                                <span>{{ $t('Account') }}</span>
                             </Link>
                         </div>
                     </div>
@@ -416,17 +463,17 @@ onUnmounted(() => {
                         <div class="flex items-center justify-between pb-2 border-b border-stone-100">
                             <div class="flex items-center gap-2">
                                 <span class="material-symbols-outlined text-[#00685f] text-[20px]" aria-hidden="true">ecg_heart</span>
-                                <h3 class="text-sm font-extrabold text-stone-900">Recorded Vitals</h3>
+                                <h3 class="text-sm font-extrabold text-stone-900">{{ $t('Recorded Vitals') }}</h3>
                             </div>
                             <span class="text-[11px] text-stone-400 font-medium">
-                                {{ latestNote?.created_at ? formatTime(latestNote.created_at) : 'No exam yet' }}
+                                {{ latestNote?.created_at ? formatTime(latestNote.created_at) : $t('No exam yet') }}
                             </span>
                         </div>
 
                         <div class="grid grid-cols-2 gap-2.5">
                             <!-- Temp -->
                             <div class="p-3 rounded-xl bg-[#f5f3f0] flex flex-col">
-                                <span class="text-[10px] font-bold text-stone-500 uppercase">Temp</span>
+                                <span class="text-[10px] font-bold text-stone-500 uppercase">{{ $t('Temp') }}</span>
                                 <div class="flex items-baseline gap-1 mt-0.5">
                                     <span class="text-lg font-black text-stone-900 font-mono">
                                         {{ latestNote?.temperature_c != null ? latestNote.temperature_c : '—' }}
@@ -437,7 +484,7 @@ onUnmounted(() => {
 
                             <!-- Heart Rate -->
                             <div class="p-3 rounded-xl bg-[#f5f3f0] flex flex-col">
-                                <span class="text-[10px] font-bold text-stone-500 uppercase">Heart Rate</span>
+                                <span class="text-[10px] font-bold text-stone-500 uppercase">{{ $t('Heart Rate') }}</span>
                                 <div class="flex items-baseline gap-1 mt-0.5">
                                     <span class="text-lg font-black text-stone-900 font-mono">
                                         {{ latestNote?.heart_rate_bpm != null ? latestNote.heart_rate_bpm : '—' }}
@@ -448,7 +495,7 @@ onUnmounted(() => {
 
                             <!-- Respiratory Rate -->
                             <div class="p-3 rounded-xl bg-[#f5f3f0] flex flex-col">
-                                <span class="text-[10px] font-bold text-stone-500 uppercase">Resp Rate</span>
+                                <span class="text-[10px] font-bold text-stone-500 uppercase">{{ $t('Resp Rate') }}</span>
                                 <div class="flex items-baseline gap-1 mt-0.5">
                                     <span class="text-lg font-black text-stone-900 font-mono">
                                         {{ latestNote?.respiratory_rate != null ? latestNote.respiratory_rate : '—' }}
@@ -459,7 +506,7 @@ onUnmounted(() => {
 
                             <!-- Blood Pressure -->
                             <div class="p-3 rounded-xl bg-[#f5f3f0] flex flex-col">
-                                <span class="text-[10px] font-bold text-stone-500 uppercase">Blood Pressure</span>
+                                <span class="text-[10px] font-bold text-stone-500 uppercase">{{ $t('Blood Pressure') }}</span>
                                 <div class="flex items-baseline gap-1 mt-0.5">
                                     <span class="text-sm font-black text-stone-900 font-mono">
                                         {{ latestNote?.systolic_bp != null ? `${latestNote.systolic_bp}/${latestNote.diastolic_bp ?? '—'}` : '—' }}
@@ -472,9 +519,9 @@ onUnmounted(() => {
                         <!-- Weight History & Dynamic Sparkline -->
                         <div class="p-3.5 rounded-xl bg-[#f5f3f0] flex flex-col gap-1.5 mt-1 border border-stone-200/50">
                             <div class="flex items-center justify-between">
-                                <span class="text-[11px] font-bold text-stone-700">Weight Record</span>
+                                <span class="text-[11px] font-bold text-stone-700">{{ $t('Weight Record') }}</span>
                                 <span class="text-[10px] font-bold text-[#17684e] bg-[#a6f2d1] px-1.5 py-0.5 rounded">
-                                    {{ latestNote?.weight_kg ? `${latestNote.weight_kg} kg` : (patient.current_weight_kg ? `${patient.current_weight_kg} kg` : 'Not recorded') }}
+                                    {{ latestNote?.weight_kg ? $t(':weight kg', { weight: latestNote.weight_kg }) : (patient.current_weight_kg ? $t(':weight kg', { weight: patient.current_weight_kg }) : $t('Not recorded')) }}
                                 </span>
                             </div>
 
@@ -492,7 +539,7 @@ onUnmounted(() => {
                                 </svg>
                             </div>
                             <span v-if="vitalHistory.length > 0" class="text-[10px] text-stone-400 text-end">
-                                {{ vitalHistory.length }} recorded reading(s)
+                                {{ $t(':count recorded reading(s)', { count: vitalHistory.length }) }}
                             </span>
                         </div>
                     </div>
@@ -502,15 +549,15 @@ onUnmounted(() => {
                         <div class="flex items-center justify-between pb-2 border-b border-stone-100">
                             <div class="flex items-center gap-1.5">
                                 <span class="material-symbols-outlined text-[#00685f] text-[18px]" aria-hidden="true">fact_check</span>
-                                <h3 class="text-sm font-extrabold text-stone-900">Problem List</h3>
+                                <h3 class="text-sm font-extrabold text-stone-900">{{ $t('Problem List') }}</h3>
                             </div>
                             <span class="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">
-                                {{ diagnoses.length }} Diagnoses
+                                {{ $t(':count Diagnoses', { count: diagnoses.length }) }}
                             </span>
                         </div>
 
                         <div v-if="diagnoses.length === 0" class="py-4 text-center text-xs text-stone-400">
-                            No additional diagnoses recorded on case yet.
+                            {{ $t('No additional diagnoses recorded on case yet.') }}
                         </div>
 
                         <div v-else class="space-y-2 text-xs">
@@ -521,7 +568,7 @@ onUnmounted(() => {
                             >
                                 <span class="font-bold text-stone-800">{{ d.diagnosis }}</span>
                                 <span class="text-[10px] font-semibold text-stone-500 capitalize bg-white px-2 py-0.5 rounded border border-stone-200">
-                                    {{ typeof d.status === 'object' ? (d.status?.value ?? 'Active') : (d.status || 'Active') }}
+                                    {{ getDiagnosisStatusLabel(d.status) }}
                                 </span>
                             </div>
                         </div>
@@ -530,14 +577,14 @@ onUnmounted(() => {
                     <!-- Patient Medical History & Notes -->
                     <div v-if="patient.notes || patient.history" class="p-5 rounded-2xl bg-white border border-stone-200/90 shadow-[0_4px_16px_-2px_rgba(120,113,108,0.06)] flex flex-col gap-3">
                         <h3 class="text-sm font-extrabold text-stone-900 pb-2 border-b border-stone-100">
-                            Patient Baseline Notes
+                            {{ $t('Patient Baseline Notes') }}
                         </h3>
                         <p v-if="patient.history" class="text-xs text-stone-700 leading-relaxed bg-[#f5f3f0] p-3 rounded-xl border border-stone-200/60">
-                            <strong class="block text-[10px] uppercase text-stone-400 mb-0.5">Clinical History:</strong>
+                            <strong class="block text-[10px] uppercase text-stone-400 mb-0.5">{{ $t('Clinical History:') }}</strong>
                             {{ patient.history }}
                         </p>
                         <p v-if="patient.notes" class="text-xs text-stone-700 leading-relaxed bg-[#f5f3f0] p-3 rounded-xl border border-stone-200/60">
-                            <strong class="block text-[10px] uppercase text-stone-400 mb-0.5">General Care Notes:</strong>
+                            <strong class="block text-[10px] uppercase text-stone-400 mb-0.5">{{ $t('General Care Notes:') }}</strong>
                             {{ patient.notes }}
                         </p>
                     </div>
@@ -545,7 +592,7 @@ onUnmounted(() => {
                     <!-- Attending Veterinarian -->
                     <div class="p-5 rounded-2xl bg-white border border-stone-200/90 shadow-[0_4px_16px_-2px_rgba(120,113,108,0.06)] flex flex-col gap-3">
                         <h3 class="text-sm font-extrabold text-stone-900 pb-2 border-b border-stone-100">
-                            Attending Medical Staff
+                            {{ $t('Attending Medical Staff') }}
                         </h3>
 
                         <div class="flex items-center gap-3">
@@ -554,9 +601,9 @@ onUnmounted(() => {
                             </div>
                             <div class="flex flex-col min-w-0">
                                 <span class="text-xs font-bold text-stone-900 truncate">
-                                    {{ cCase.primary_veterinarian?.name ?? 'Unassigned Attending Vet' }}
+                                    {{ cCase.primary_veterinarian?.name ?? $t('Unassigned Attending Vet') }}
                                 </span>
-                                <span class="text-[11px] font-semibold text-[#00685f]">Case Clinician</span>
+                                <span class="text-[11px] font-semibold text-[#00685f]">{{ $t('Case Clinician') }}</span>
                             </div>
                         </div>
                     </div>
@@ -571,7 +618,7 @@ onUnmounted(() => {
                         <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-100">
                             <div class="flex items-center gap-2">
                                 <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
-                                    Level 2 Case
+                                    {{ $t('Level 2 Case') }}
                                 </span>
                                 <h2 class="text-base font-black text-stone-900 font-mono tracking-tight">
                                     {{ cCase.case_number }}
@@ -585,33 +632,33 @@ onUnmounted(() => {
                                 class="text-xs font-bold text-[#00685f] hover:underline inline-flex items-center gap-1"
                             >
                                 <span class="material-symbols-outlined text-[16px]" aria-hidden="true">edit</span>
-                                <span>Edit Case</span>
+                                <span>{{ $t('Edit Case') }}</span>
                             </Link>
                         </div>
 
                         <!-- Chief Complaint -->
                         <div class="space-y-1">
                             <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider block">
-                                Chief Medical Complaint
+                                {{ $t('Chief Medical Complaint') }}
                             </span>
                             <p class="text-xs sm:text-sm text-stone-900 font-medium bg-[#f5f3f0] p-3 rounded-xl border border-stone-200/60 leading-relaxed">
-                                {{ cCase.chief_complaint || 'No complaint details provided.' }}
+                                {{ cCase.chief_complaint || $t('No complaint details provided.') }}
                             </p>
                         </div>
 
                         <!-- Provisional & Confirmed Diagnoses -->
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                             <div class="p-3 rounded-xl bg-amber-50/70 border border-amber-200/70 flex flex-col">
-                                <span class="text-[10px] font-bold uppercase text-amber-800 tracking-wider">Provisional Diagnosis</span>
+                                <span class="text-[10px] font-bold uppercase text-amber-800 tracking-wider">{{ $t('Provisional Diagnosis') }}</span>
                                 <p class="text-xs font-bold text-stone-900 mt-1">
-                                    {{ cCase.provisional_diagnosis || 'Differential diagnosis pending diagnostic workup.' }}
+                                    {{ cCase.provisional_diagnosis || $t('Differential diagnosis pending diagnostic workup.') }}
                                 </p>
                             </div>
 
                             <div class="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/70 flex flex-col">
-                                <span class="text-[10px] font-bold uppercase text-emerald-800 tracking-wider">Final Confirmed Diagnosis</span>
+                                <span class="text-[10px] font-bold uppercase text-emerald-800 tracking-wider">{{ $t('Final Confirmed Diagnosis') }}</span>
                                 <p class="text-xs font-bold text-stone-900 mt-1">
-                                    {{ cCase.final_diagnosis || 'Awaiting attending clinician sign-off.' }}
+                                    {{ cCase.final_diagnosis || $t('Awaiting attending clinician sign-off.') }}
                                 </p>
                             </div>
                         </div>
@@ -622,7 +669,7 @@ onUnmounted(() => {
                         <div class="flex items-center justify-between pb-2 border-b border-stone-100">
                             <div class="flex items-center gap-2">
                                 <span class="material-symbols-outlined text-[#00685f] text-[20px]" aria-hidden="true">radiology</span>
-                                <h3 class="text-sm font-extrabold text-stone-900">Encounter Diagnostic Media & Radiographs (S3)</h3>
+                                <h3 class="text-sm font-extrabold text-stone-900">{{ $t('Encounter Diagnostic Media & Radiographs (S3)') }}</h3>
                             </div>
 
                             <button
@@ -632,14 +679,14 @@ onUnmounted(() => {
                                 class="inline-flex items-center gap-1 text-xs font-bold text-[#00685f] hover:underline"
                             >
                                 <span class="material-symbols-outlined text-[16px]" aria-hidden="true">upload_file</span>
-                                <span>Upload DICOM / Media</span>
+                                <span>{{ $t('Upload DICOM / Media') }}</span>
                             </button>
                         </div>
 
                         <!-- Empty state -->
                         <div v-if="mediaImages.length === 0" class="py-8 text-center text-xs text-stone-400 bg-[#f5f3f0] rounded-xl border border-dashed border-stone-300">
                             <span class="material-symbols-outlined text-3xl text-stone-300 mb-1 block" aria-hidden="true">image_not_supported</span>
-                            No diagnostic radiographs or ultrasound images uploaded for this visit encounter yet.
+                            {{ $t('No diagnostic radiographs or ultrasound images uploaded for this visit encounter yet.') }}
                         </div>
 
                         <!-- Media Gallery Grid -->
@@ -649,18 +696,18 @@ onUnmounted(() => {
                                 :key="img.id"
                                 type="button"
                                 @click="activePreviewImage = img"
-                                :aria-label="`View ${img.title || 'Diagnostic Media'}`"
+                                :aria-label="img.title || $t('Diagnostic Media')"
                                 class="group relative rounded-xl overflow-hidden bg-black aspect-video cursor-pointer border border-stone-200 shadow-xs text-left w-full focus:outline-none focus:ring-2 focus:ring-[#00685f]"
                             >
                                 <img
                                     :src="img.file_url || (img.file_path ? `/storage/${img.file_path}` : '')"
-                                    :alt="img.title || 'Diagnostic Media'"
+                                    :alt="img.title || $t('Diagnostic Media')"
                                     class="w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition-all duration-300"
                                     loading="lazy"
                                 />
                                 <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent"></div>
                                 <div class="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between text-white text-xs">
-                                    <span class="font-bold truncate max-w-[70%]">{{ img.title || 'Diagnostic Study' }}</span>
+                                    <span class="font-bold truncate max-w-[70%]">{{ img.title || $t('Diagnostic Study') }}</span>
                                     <span class="text-[10px] bg-black/60 px-1.5 py-0.5 rounded font-mono">
                                         {{ formatDate(img.created_at) }}
                                     </span>
@@ -674,7 +721,7 @@ onUnmounted(() => {
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2">
                                 <span class="material-symbols-outlined text-[#00685f] text-[22px]" aria-hidden="true">event_note</span>
-                                <h3 class="text-sm font-extrabold text-stone-900">Encounter Workspace</h3>
+                                <h3 class="text-sm font-extrabold text-stone-900">{{ $t('Encounter Workspace') }}</h3>
                             </div>
 
                             <Link
@@ -682,7 +729,7 @@ onUnmounted(() => {
                                 :href="`/portal/visits/${visit.id}/edit`"
                                 class="px-2.5 py-1 rounded-lg text-xs font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 transition"
                             >
-                                Edit Metadata
+                                {{ $t('Edit Metadata') }}
                             </Link>
                         </div>
 
@@ -691,13 +738,13 @@ onUnmounted(() => {
                             <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-100">
                                 <div class="flex items-center gap-2 flex-wrap">
                                     <span class="px-2.5 py-0.5 rounded-full bg-[#00685f] text-white text-[11px] font-black uppercase tracking-wider">
-                                        Current Encounter
+                                        {{ $t('Current Encounter') }}
                                     </span>
                                     <h4 class="text-base font-extrabold text-stone-900">
                                         {{ visit.title }}
                                     </h4>
                                     <span class="text-xs font-semibold text-stone-500 capitalize">
-                                        ({{ visit.visit_type?.replace('_', ' ') }})
+                                        ({{ formatVisitType(visit.visit_type) }})
                                     </span>
                                 </div>
 
@@ -707,13 +754,13 @@ onUnmounted(() => {
                                         class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold inline-flex items-center gap-1"
                                     >
                                         <span class="material-symbols-outlined text-[16px]" aria-hidden="true">verified</span>
-                                        Signed by {{ visit.signed_by || 'Doctor' }}
+                                        {{ $t('Signed by :name', { name: visit.signed_by || $t('Doctor') }) }}
                                     </span>
                                     <span
                                         v-else
                                         class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 text-xs font-bold"
                                     >
-                                        In Progress
+                                        {{ $t('In Progress') }}
                                     </span>
                                 </div>
                             </div>
@@ -723,12 +770,12 @@ onUnmounted(() => {
                                 <!-- Vital Signs Quick Input Bar -->
                                 <div class="p-3.5 rounded-xl bg-[#f5f3f0] border border-stone-200/80 space-y-2">
                                     <span class="text-[10px] font-bold uppercase tracking-wider text-stone-500 block">
-                                        Encounter Examination Vital Signs Entry
+                                        {{ $t('Encounter Examination Vital Signs Entry') }}
                                     </span>
 
                                     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs">
                                         <div>
-                                            <label for="temperature_c" class="block text-[10px] font-bold text-stone-600">Temp (°C)</label>
+                                            <label for="temperature_c" class="block text-[10px] font-bold text-stone-600">{{ $t('Temp (°C)') }}</label>
                                             <input
                                                 id="temperature_c"
                                                 v-model="soapForm.temperature_c"
@@ -742,7 +789,7 @@ onUnmounted(() => {
                                         </div>
 
                                         <div>
-                                            <label for="heart_rate_bpm" class="block text-[10px] font-bold text-stone-600">Heart Rate</label>
+                                            <label for="heart_rate_bpm" class="block text-[10px] font-bold text-stone-600">{{ $t('Heart Rate') }}</label>
                                             <input
                                                 id="heart_rate_bpm"
                                                 v-model="soapForm.heart_rate_bpm"
@@ -755,7 +802,7 @@ onUnmounted(() => {
                                         </div>
 
                                         <div>
-                                            <label for="respiratory_rate" class="block text-[10px] font-bold text-stone-600">Resp Rate</label>
+                                            <label for="respiratory_rate" class="block text-[10px] font-bold text-stone-600">{{ $t('Resp Rate') }}</label>
                                             <input
                                                 id="respiratory_rate"
                                                 v-model="soapForm.respiratory_rate"
@@ -768,7 +815,7 @@ onUnmounted(() => {
                                         </div>
 
                                         <div>
-                                            <label for="weight_kg" class="block text-[10px] font-bold text-stone-600">Weight (kg)</label>
+                                            <label for="weight_kg" class="block text-[10px] font-bold text-stone-600">{{ $t('Weight (kg)') }}</label>
                                             <input
                                                 id="weight_kg"
                                                 v-model="soapForm.weight_kg"
@@ -782,7 +829,7 @@ onUnmounted(() => {
                                         </div>
 
                                         <div>
-                                            <label for="systolic_bp" class="block text-[10px] font-bold text-stone-600">Systolic BP</label>
+                                            <label for="systolic_bp" class="block text-[10px] font-bold text-stone-600">{{ $t('Systolic BP') }}</label>
                                             <input
                                                 id="systolic_bp"
                                                 v-model="soapForm.systolic_bp"
@@ -795,7 +842,7 @@ onUnmounted(() => {
                                         </div>
 
                                         <div>
-                                            <label for="diastolic_bp" class="block text-[10px] font-bold text-stone-600">Diastolic BP</label>
+                                            <label for="diastolic_bp" class="block text-[10px] font-bold text-stone-600">{{ $t('Diastolic BP') }}</label>
                                             <input
                                                 id="diastolic_bp"
                                                 v-model="soapForm.diastolic_bp"
@@ -816,7 +863,7 @@ onUnmounted(() => {
                                             S
                                         </span>
                                         <label for="subjective" class="text-xs font-bold text-stone-800 uppercase tracking-wide">
-                                            Subjective Observations & History
+                                            {{ $t('Subjective Observations & History') }}
                                         </label>
                                     </div>
                                     <textarea
@@ -824,7 +871,7 @@ onUnmounted(() => {
                                         v-model="soapForm.subjective"
                                         :disabled="visit.is_signed"
                                         rows="2"
-                                        placeholder="Patient demeanor, appetite, water intake, owner observations..."
+                                        :placeholder="$t('Patient demeanor, appetite, water intake, owner observations...')"
                                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs sm:text-sm text-stone-900 focus:border-[#00685f] focus:outline-none disabled:bg-stone-100 leading-relaxed"
                                     ></textarea>
                                     <p v-if="soapForm.errors.subjective" class="text-xs text-rose-600 font-semibold mt-1">{{ soapForm.errors.subjective }}</p>
@@ -837,7 +884,7 @@ onUnmounted(() => {
                                             O
                                         </span>
                                         <label for="objective" class="text-xs font-bold text-stone-800 uppercase tracking-wide">
-                                            Objective Physical Examination Findings
+                                            {{ $t('Objective Physical Examination Findings') }}
                                         </label>
                                     </div>
                                     <textarea
@@ -845,7 +892,7 @@ onUnmounted(() => {
                                         v-model="soapForm.objective"
                                         :disabled="visit.is_signed"
                                         rows="2"
-                                        placeholder="Auscultation, palpation, mucous membranes, CRT, gait evaluation..."
+                                        :placeholder="$t('Auscultation, palpation, mucous membranes, CRT, gait evaluation...')"
                                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs sm:text-sm text-stone-900 focus:border-[#00685f] focus:outline-none disabled:bg-stone-100 leading-relaxed"
                                     ></textarea>
                                     <p v-if="soapForm.errors.objective" class="text-xs text-rose-600 font-semibold mt-1">{{ soapForm.errors.objective }}</p>
@@ -858,7 +905,7 @@ onUnmounted(() => {
                                             A
                                         </span>
                                         <label for="assessment" class="text-xs font-bold text-stone-800 uppercase tracking-wide">
-                                            Assessment & Differential Evaluation
+                                            {{ $t('Assessment & Differential Evaluation') }}
                                         </label>
                                     </div>
                                     <textarea
@@ -866,7 +913,7 @@ onUnmounted(() => {
                                         v-model="soapForm.assessment"
                                         :disabled="visit.is_signed"
                                         rows="2"
-                                        placeholder="Clinical impression, diagnosis evaluation, treatment response..."
+                                        :placeholder="$t('Clinical impression, diagnosis evaluation, treatment response...')"
                                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs sm:text-sm text-stone-900 focus:border-[#00685f] focus:outline-none disabled:bg-stone-100 leading-relaxed"
                                     ></textarea>
                                     <p v-if="soapForm.errors.assessment" class="text-xs text-rose-600 font-semibold mt-1">{{ soapForm.errors.assessment }}</p>
@@ -879,7 +926,7 @@ onUnmounted(() => {
                                             P
                                         </span>
                                         <label for="plan" class="text-xs font-bold text-stone-800 uppercase tracking-wide">
-                                            Plan & Medical Protocol
+                                            {{ $t('Plan & Medical Protocol') }}
                                         </label>
                                     </div>
                                     <textarea
@@ -887,7 +934,7 @@ onUnmounted(() => {
                                         v-model="soapForm.plan"
                                         :disabled="visit.is_signed"
                                         rows="2"
-                                        placeholder="Medications, dosing protocols, client communication, recheck schedule..."
+                                        :placeholder="$t('Medications, dosing protocols, client communication, recheck schedule...')"
                                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs sm:text-sm text-stone-900 focus:border-[#00685f] focus:outline-none disabled:bg-stone-100 leading-relaxed"
                                     ></textarea>
                                     <p v-if="soapForm.errors.plan" class="text-xs text-rose-600 font-semibold mt-1">{{ soapForm.errors.plan }}</p>
@@ -897,10 +944,10 @@ onUnmounted(() => {
                                 <div class="pt-2 flex flex-wrap items-center justify-between gap-3">
                                     <span v-if="isSoapSaved" class="text-xs font-bold text-[#17684e] flex items-center gap-1">
                                         <span class="material-symbols-outlined text-[16px]" aria-hidden="true">check_circle</span>
-                                        SOAP notes saved successfully!
+                                        {{ $t('SOAP notes saved successfully!') }}
                                     </span>
                                     <span v-else class="text-xs text-stone-400">
-                                        Ensure clinical accuracy prior to signing and locking.
+                                        {{ $t('Ensure clinical accuracy prior to signing and locking.') }}
                                     </span>
 
                                     <div class="flex items-center gap-2 ms-auto">
@@ -910,7 +957,7 @@ onUnmounted(() => {
                                             :disabled="soapForm.processing"
                                             class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-[#00685f] hover:bg-[#005049] shadow-sm transition active:scale-95 disabled:opacity-50"
                                         >
-                                            {{ soapForm.processing ? 'Saving...' : 'Save SOAP Examination' }}
+                                            {{ soapForm.processing ? $t('Saving...') : $t('Save SOAP Examination') }}
                                         </button>
 
                                         <button
@@ -921,7 +968,7 @@ onUnmounted(() => {
                                             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-stone-900 hover:bg-black shadow-sm transition active:scale-95 disabled:opacity-50"
                                         >
                                             <span class="material-symbols-outlined text-[16px] text-emerald-400" aria-hidden="true">lock</span>
-                                            <span>{{ isSigning ? 'Signing...' : 'Sign & Lock Record' }}</span>
+                                            <span>{{ isSigning ? $t('Signing...') : $t('Sign & Lock Record') }}</span>
                                         </button>
                                     </div>
                                 </div>
@@ -931,7 +978,7 @@ onUnmounted(() => {
                         <!-- Previous Visits Timeline -->
                         <div v-if="otherVisits.length > 0" class="space-y-3 pt-2">
                             <span class="text-xs font-bold text-stone-400 uppercase tracking-wider block">
-                                Other Encounters Under This Case
+                                {{ $t('Other Encounters Under This Case') }}
                             </span>
 
                             <div class="space-y-2">
@@ -958,7 +1005,7 @@ onUnmounted(() => {
                                     <div class="flex items-center gap-2">
                                         <span v-if="v.is_signed" class="text-[10px] font-bold text-[#17684e] bg-[#a6f2d1] px-2 py-0.5 rounded-full flex items-center gap-1">
                                             <span class="material-symbols-outlined text-[12px]" aria-hidden="true">lock</span>
-                                            Signed
+                                            {{ $t('Signed') }}
                                         </span>
                                         <span class="text-xs font-bold text-stone-400 group-hover:text-[#00685f] rtl:rotate-180">
                                             &rarr;
@@ -976,7 +1023,7 @@ onUnmounted(() => {
                 <div class="xl:col-span-3 flex flex-col gap-6">
                     <!-- Fast Order Launcher -->
                     <div v-if="!visit.is_signed" class="p-5 rounded-2xl bg-white border border-stone-200/90 shadow-[0_4px_16px_-2px_rgba(120,113,108,0.06)] flex flex-col gap-3">
-                        <span class="text-sm font-extrabold text-stone-900">Quick Clinical Order</span>
+                        <span class="text-sm font-extrabold text-stone-900">{{ $t('Quick Clinical Order') }}</span>
                         <div class="grid grid-cols-2 gap-2 text-xs">
                             <button
                                 type="button"
@@ -984,7 +1031,7 @@ onUnmounted(() => {
                                 class="h-12 rounded-xl bg-[#f5f3f0] hover:bg-[#00685f] hover:text-white text-stone-800 font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs group"
                             >
                                 <span class="material-symbols-outlined text-[18px] text-[#00685f] group-hover:text-white" aria-hidden="true">medication</span>
-                                <span>+ Rx Med</span>
+                                <span>{{ $t('+ Rx Med') }}</span>
                             </button>
 
                             <button
@@ -993,7 +1040,7 @@ onUnmounted(() => {
                                 class="h-12 rounded-xl bg-[#f5f3f0] hover:bg-[#00685f] hover:text-white text-stone-800 font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs group"
                             >
                                 <span class="material-symbols-outlined text-[18px] text-[#00685f] group-hover:text-white" aria-hidden="true">radiology</span>
-                                <span>+ Imaging</span>
+                                <span>{{ $t('+ Imaging') }}</span>
                             </button>
                         </div>
                     </div>
@@ -1003,7 +1050,7 @@ onUnmounted(() => {
                         <div class="flex items-center justify-between pb-2 border-b border-stone-100">
                             <div class="flex items-center gap-1.5">
                                 <span class="material-symbols-outlined text-[#00685f] text-[20px]" aria-hidden="true">vaccines</span>
-                                <h3 class="text-sm font-extrabold text-stone-900">eMAR Daily Log</h3>
+                                <h3 class="text-sm font-extrabold text-stone-900">{{ $t('eMAR Daily Log') }}</h3>
                             </div>
                             <button
                                 v-if="!visit.is_signed"
@@ -1011,13 +1058,13 @@ onUnmounted(() => {
                                 @click="isDoseModalOpen = true"
                                 class="text-xs font-bold text-[#00685f] hover:underline"
                             >
-                                + Administer
+                                {{ $t('+ Administer') }}
                             </button>
                         </div>
 
                         <!-- Empty state -->
                         <div v-if="administeredDoses.length === 0" class="py-6 text-center text-xs text-stone-400">
-                            No medications administered during this visit yet.
+                            {{ $t('No medications administered during this visit yet.') }}
                         </div>
 
                         <!-- Doses List -->
@@ -1028,7 +1075,7 @@ onUnmounted(() => {
                                 class="p-2.5 rounded-xl bg-[#f5f3f0] flex flex-col gap-0.5 border border-stone-200/60"
                             >
                                 <div class="flex items-center justify-between">
-                                    <span class="font-bold text-stone-900">{{ d.product?.name ?? 'Unknown Medication' }}</span>
+                                    <span class="font-bold text-stone-900">{{ d.product?.name ?? $t('Unknown Medication') }}</span>
                                     <span class="text-[11px] font-bold text-[#17684e] font-mono">
                                         {{ formatTime(d.created_at) }}
                                     </span>
@@ -1037,7 +1084,7 @@ onUnmounted(() => {
                                     <span class="font-mono font-semibold text-[#00685f]">
                                         {{ d.dose_amount_base_units }} {{ d.product?.base_unit || '' }} ({{ d.route_administered ?? '—' }})
                                     </span>
-                                    <span>{{ d.administered_by?.name || 'Staff' }}</span>
+                                    <span>{{ d.administered_by?.name || $t('Staff') }}</span>
                                 </div>
                                 <span v-if="d.clinical_notes" class="text-[10px] text-stone-400 italic">
                                     {{ d.clinical_notes }}
@@ -1062,9 +1109,9 @@ onUnmounted(() => {
                 <div class="flex items-center justify-between pb-3 border-b border-stone-100">
                     <div class="flex items-center gap-2">
                         <span class="material-symbols-outlined text-[#00685f] text-2xl" aria-hidden="true">vaccines</span>
-                        <h3 id="dose-modal-title" class="text-base font-extrabold text-stone-900">Administer Medication Dose</h3>
+                        <h3 id="dose-modal-title" class="text-base font-extrabold text-stone-900">{{ $t('Administer Medication Dose') }}</h3>
                     </div>
-                    <button type="button" @click="closeDose" aria-label="Close modal" class="text-stone-400 hover:text-stone-700">
+                    <button type="button" @click="closeDose" :aria-label="$t('Close modal')" class="text-stone-400 hover:text-stone-700">
                         <span class="material-symbols-outlined text-xl" aria-hidden="true">close</span>
                     </button>
                 </div>
@@ -1074,21 +1121,21 @@ onUnmounted(() => {
 
                 <form @submit.prevent="administerDose" class="space-y-4">
                     <div>
-                        <label for="modal_product_id" class="block text-xs font-bold text-stone-700">Select Pharmaceutical Product *</label>
+                        <label for="modal_product_id" class="block text-xs font-bold text-stone-700">{{ $t('Select Pharmaceutical Product *') }}</label>
                         <select
                             id="modal_product_id"
                             v-model="doseForm.product_id"
                             required
                             class="mt-1 w-full rounded-xl border border-stone-300 p-2.5 text-xs text-stone-900 focus:border-[#00685f] focus:outline-none"
                         >
-                            <option value="" disabled>Select medication from pharmacy...</option>
+                            <option value="" disabled>{{ $t('Select medication from pharmacy...') }}</option>
                             <option
                                 v-for="p in products"
                                 :key="p.id"
                                 :value="p.id"
                                 :disabled="(p.total_stock ?? p.current_stock ?? 0) <= 0"
                             >
-                                {{ p.name }} ({{ p.total_stock ?? p.current_stock ?? 0 }} {{ p.base_unit }} available){{ (p.total_stock ?? p.current_stock ?? 0) <= 0 ? ' - Out of Stock' : '' }}
+                                {{ p.name }} ({{ $t(':qty :unit available', { qty: p.total_stock ?? p.current_stock ?? 0, unit: p.base_unit }) }}){{ (p.total_stock ?? p.current_stock ?? 0) <= 0 ? ' - ' + $t('Out of Stock') : '' }}
                             </option>
                         </select>
                         <p v-if="doseForm.errors.product_id" class="text-xs text-rose-600 mt-1 font-semibold">
@@ -1098,14 +1145,14 @@ onUnmounted(() => {
 
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label for="modal_dose_amount" class="block text-xs font-bold text-stone-700">Dose Quantity *</label>
+                            <label for="modal_dose_amount" class="block text-xs font-bold text-stone-700">{{ $t('Dose Quantity *') }}</label>
                             <input
                                 id="modal_dose_amount"
                                 v-model="doseForm.dose_amount_base_units"
                                 type="number"
                                 step="0.0001"
                                 required
-                                placeholder="e.g. 2.5000"
+                                :placeholder="$t('e.g. 2.5000')"
                                 class="mt-1 w-full rounded-xl border border-stone-300 p-2.5 text-xs text-stone-900 focus:border-[#00685f] focus:outline-none font-mono"
                             />
                             <p v-if="doseForm.errors.dose_amount_base_units" class="text-xs text-rose-600 mt-1 font-semibold">
@@ -1114,18 +1161,18 @@ onUnmounted(() => {
                         </div>
 
                         <div>
-                            <label for="modal_route" class="block text-xs font-bold text-stone-700">Administration Route</label>
+                            <label for="modal_route" class="block text-xs font-bold text-stone-700">{{ $t('Administration Route') }}</label>
                             <select
                                 id="modal_route"
                                 v-model="doseForm.route_administered"
                                 class="mt-1 w-full rounded-xl border border-stone-300 p-2.5 text-xs text-stone-900 focus:border-[#00685f] focus:outline-none"
                             >
-                                <option value="SC">Subcutaneous (SC)</option>
-                                <option value="IV">Intravenous (IV)</option>
-                                <option value="IM">Intramuscular (IM)</option>
-                                <option value="PO">Oral (PO)</option>
-                                <option value="Topical">Topical</option>
-                                <option value="Inhalation">Inhalation</option>
+                                <option value="SC">{{ $t('Subcutaneous (SC)') }}</option>
+                                <option value="IV">{{ $t('Intravenous (IV)') }}</option>
+                                <option value="IM">{{ $t('Intramuscular (IM)') }}</option>
+                                <option value="PO">{{ $t('Oral (PO)') }}</option>
+                                <option value="Topical">{{ $t('Topical') }}</option>
+                                <option value="Inhalation">{{ $t('Inhalation') }}</option>
                             </select>
                             <p v-if="doseForm.errors.route_administered" class="text-xs text-rose-600 mt-1 font-semibold">
                                 {{ doseForm.errors.route_administered }}
@@ -1134,12 +1181,12 @@ onUnmounted(() => {
                     </div>
 
                     <div>
-                        <label for="modal_notes" class="block text-xs font-bold text-stone-700">Administration Notes</label>
+                        <label for="modal_notes" class="block text-xs font-bold text-stone-700">{{ $t('Administration Notes') }}</label>
                         <input
                             id="modal_notes"
                             v-model="doseForm.clinical_notes"
                             type="text"
-                            placeholder="e.g. Tolerated without adverse reaction"
+                            :placeholder="$t('e.g. Tolerated without adverse reaction')"
                             class="mt-1 w-full rounded-xl border border-stone-300 p-2.5 text-xs text-stone-900 focus:border-[#00685f] focus:outline-none"
                         />
                         <p v-if="doseForm.errors.clinical_notes" class="text-xs text-rose-600 mt-1 font-semibold">
@@ -1165,14 +1212,14 @@ onUnmounted(() => {
                             @click="closeDose"
                             class="px-4 py-2 rounded-xl text-xs font-bold text-stone-600 hover:bg-stone-100"
                         >
-                            Cancel
+                            {{ $t('Cancel') }}
                         </button>
                         <button
                             type="submit"
                             :disabled="doseForm.processing"
                             class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#00685f] hover:bg-[#005049] transition disabled:opacity-50"
                         >
-                            {{ doseForm.processing ? 'Deducting Stock...' : 'Administer & Deduct Stock' }}
+                            {{ doseForm.processing ? $t('Deducting Stock...') : $t('Administer & Deduct Stock') }}
                         </button>
                     </div>
                 </form>
@@ -1192,16 +1239,16 @@ onUnmounted(() => {
                 <div class="flex items-center justify-between pb-3 border-b border-stone-100">
                     <div class="flex items-center gap-2">
                         <span class="material-symbols-outlined text-[#00685f] text-2xl" aria-hidden="true">add_photo_alternate</span>
-                        <h3 id="media-modal-title" class="text-base font-extrabold text-stone-900">Upload Radiograph / Diagnostic Media</h3>
+                        <h3 id="media-modal-title" class="text-base font-extrabold text-stone-900">{{ $t('Upload Radiograph / Diagnostic Media') }}</h3>
                     </div>
-                    <button type="button" @click="closeMedia" aria-label="Close modal" class="text-stone-400 hover:text-stone-700">
+                    <button type="button" @click="closeMedia" :aria-label="$t('Close modal')" class="text-stone-400 hover:text-stone-700">
                         <span class="material-symbols-outlined text-xl" aria-hidden="true">close</span>
                     </button>
                 </div>
 
                 <form @submit.prevent="uploadMedia" class="space-y-4">
                     <div>
-                        <label for="media_file_input" class="block text-xs font-bold text-stone-700">Select Image File *</label>
+                        <label for="media_file_input" class="block text-xs font-bold text-stone-700">{{ $t('Select Image File *') }}</label>
                         <input
                             id="media_file_input"
                             type="file"
@@ -1216,12 +1263,12 @@ onUnmounted(() => {
                     </div>
 
                     <div>
-                        <label for="media_title_input" class="block text-xs font-bold text-stone-700">Study Title / Anatomical View</label>
+                        <label for="media_title_input" class="block text-xs font-bold text-stone-700">{{ $t('Study Title / Anatomical View') }}</label>
                         <input
                             id="media_title_input"
                             v-model="mediaForm.title"
                             type="text"
-                            placeholder="e.g. Pre-Op Lateral Right Femur X-Ray"
+                            :placeholder="$t('e.g. Pre-Op Lateral Right Femur X-Ray')"
                             class="mt-1 w-full rounded-xl border border-stone-300 p-2.5 text-xs text-stone-900 focus:border-[#00685f] focus:outline-none"
                         />
                         <p v-if="mediaForm.errors.title" class="text-xs text-rose-600 mt-1 font-semibold">
@@ -1235,14 +1282,14 @@ onUnmounted(() => {
                             @click="closeMedia"
                             class="px-4 py-2 rounded-xl text-xs font-bold text-stone-600 hover:bg-stone-100"
                         >
-                            Cancel
+                            {{ $t('Cancel') }}
                         </button>
                         <button
                             type="submit"
                             :disabled="mediaForm.processing || !mediaForm.image"
                             class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#00685f] hover:bg-[#005049] transition disabled:opacity-50"
                         >
-                            {{ mediaForm.processing ? 'Uploading to MinIO S3...' : 'Upload Media' }}
+                            {{ mediaForm.processing ? $t('Uploading to MinIO S3...') : $t('Upload Media') }}
                         </button>
                     </div>
                 </form>
@@ -1261,12 +1308,12 @@ onUnmounted(() => {
             <div class="flex items-center justify-between text-white">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-2xl text-[#00685f]" aria-hidden="true">radiology</span>
-                    <h3 id="preview-modal-title" class="text-base font-bold">{{ activePreviewImage.title || 'Diagnostic View' }}</h3>
+                    <h3 id="preview-modal-title" class="text-base font-bold">{{ activePreviewImage.title || $t('Diagnostic View') }}</h3>
                 </div>
                 <button
                     type="button"
                     @click="activePreviewImage = null"
-                    aria-label="Close preview"
+                    :aria-label="$t('Close preview')"
                     class="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
                 >
                     <span class="material-symbols-outlined text-xl" aria-hidden="true">close</span>
@@ -1276,7 +1323,7 @@ onUnmounted(() => {
             <div class="flex-1 flex items-center justify-center p-4 min-h-0">
                 <img
                     :src="activePreviewImage.file_url || (activePreviewImage.file_path ? `/storage/${activePreviewImage.file_path}` : '')"
-                    :alt="activePreviewImage.title || 'Diagnostic Image'"
+                    :alt="activePreviewImage.title || $t('Diagnostic Image')"
                     class="max-h-full max-w-full object-contain rounded-lg shadow-2xl"
                 />
             </div>
@@ -1291,7 +1338,7 @@ onUnmounted(() => {
                     class="text-[#00685f] hover:underline flex items-center gap-1 font-bold"
                 >
                     <span class="material-symbols-outlined text-[16px]" aria-hidden="true">download</span>
-                    Download Asset
+                    {{ $t('Download Asset') }}
                 </a>
             </div>
         </div>

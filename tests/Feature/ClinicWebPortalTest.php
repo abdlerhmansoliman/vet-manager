@@ -578,4 +578,27 @@ class ClinicWebPortalTest extends TestCase
         $product = InventoryProduct::query()->where('sku', $sku)->firstOrFail();
         $this->assertTrue($product->is_controlled);
     }
+
+    public function test_toggle_availability_is_idempotent_when_explicit_state_is_passed(): void
+    {
+        $sarah = User::query()->where('email', 'sarah.connor@vetservices.com')->firstOrFail();
+
+        $this->withSession(['active_tenant_id' => $this->alphaTenant->id])
+            ->actingAs($this->doctor, 'web');
+
+        // Explicitly set is_available = true
+        $this->post("/portal/staff/{$sarah->id}/toggle-availability", ['is_available' => true])
+            ->assertSessionHas('success');
+        $this->assertTrue((bool) $sarah->fresh()->profile->is_available);
+
+        // Replaying same explicit call remains true (idempotent)
+        $this->post("/portal/staff/{$sarah->id}/toggle-availability", ['is_available' => true])
+            ->assertSessionHas('success');
+        $this->assertTrue((bool) $sarah->fresh()->profile->is_available);
+
+        // Explicitly set is_available = false
+        $this->post("/portal/staff/{$sarah->id}/toggle-availability", ['is_available' => false])
+            ->assertSessionHas('success');
+        $this->assertFalse((bool) $sarah->fresh()->profile->is_available);
+    }
 }

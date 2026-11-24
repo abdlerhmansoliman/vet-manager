@@ -19,6 +19,7 @@ use App\Services\Tenancy\TenantManager;
 use Database\Seeders\TenantSeeder;
 use Database\Seeders\TenantStaffSeeder;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -315,9 +316,9 @@ class InventoryDeductionRefactorTest extends TestCase
         $ledger = InventoryMovementLedger::query()->first();
         if ($ledger instanceof InventoryMovementLedger) {
             // Attempt raw SQL update bypassing Eloquent
-            $this->expectException(\Illuminate\Database\QueryException::class);
+            $this->expectException(QueryException::class);
             $this->expectExceptionMessage('immutable');
-            \Illuminate\Support\Facades\DB::connection('tenant')
+            DB::connection('tenant')
                 ->table('inventory_movement_ledger')
                 ->where('id', $ledger->id)
                 ->update(['reason' => 'Direct SQL tamper attempt']);
@@ -394,7 +395,7 @@ class InventoryDeductionRefactorTest extends TestCase
             'reconciliation_deficit' => '0.0000',
         ]);
 
-        $service = app(\App\Services\Inventory\InventoryDeductionService::class);
+        $service = app(InventoryDeductionService::class);
         $actor = User::query()->where('email', 'john.miller@alphavet.com')->firstOrFail();
 
         // Deduct 5.0000 ml with allowNegativeBalance=true when 0 stock exists

@@ -27,4 +27,16 @@ enum CaseStatus: string
     {
         return in_array($this, [self::Open, self::UnderObservation, self::CriticalCare], true);
     }
+
+    /**
+     * @return list<string>
+     */
+    public static function activeValues(): array
+    {
+        return [
+            self::Open->value,
+            self::UnderObservation->value,
+            self::CriticalCare->value,
+        ];
+    }
 }
